@@ -1,0 +1,43 @@
+.dialog-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: #b497fa;
+  background: #7650bf33;
+  border-radius: 10px;
+  margin-bottom: 18px;
+}
+.connection-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.connection-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  color: #bbc6d9;
+}
+.connection-form input {
+  width: 100%;
+  border: 1px solid #354056;
+  background: #101722;
+  border-radius: 6px;
+  padding: 9px 11px;
+  color: #e2e7f1;
+}
+.form-pair {
+  display: grid;
+  grid-template-columns: 1fr 100px;
+  gap: 12px;
+}
+.error-message {
+  font-size: 12px;
+  color: #ffadb6;
+  border: 1px solid #af546655;
+  border-radius: 6px;
+  padding: 10px;
+  overflow-wrap: anywhere;
+}

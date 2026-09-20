@@ -1,0 +1,140 @@
+.graph-area {
+  flex: 1;
+  position: relative;
+  min-height: 220px;
+}
+.react-flow {
+  background: radial-gradient(ellipse at 40% 50%, #171b301f, transparent 70%);
+}
+.graph-toolbar {
+  display: flex;
+  gap: 7px;
+}
+.graph-toolbar button {
+  font-size: 10px;
+  background: #1a2230;
+}
+.table-node {
+  width: 234px;
+  background: linear-gradient(135deg, #1b2331, #141b26);
+  border: 1px solid color-mix(in srgb, var(--node-color), transparent 20%);
+  border-radius: 12px;
+  box-shadow: 0 0 20px color-mix(in srgb, var(--node-color), transparent 94%);
+  transition:
+    opacity 0.2s,
+    box-shadow 0.2s;
+}
+.table-node.is-selected {
+  border-color: #b396ff;
+  box-shadow:
+    0 0 0 1px #a482fd,
+    0 0 30px #8c53e826;
+}
+.table-node.is-muted {
+  opacity: 0.22;
+}
+.node-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 13px;
+  border-bottom: 1px solid #ffffff0c;
+}
+.node-icon {
+  color: var(--node-color);
+  background: color-mix(in srgb, var(--node-color), transparent 88%);
+  width: 33px;
+  height: 35px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+}
+.node-heading strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+.node-heading small {
+  display: block;
+  font-size: 10px;
+  color: #98a6bd;
+  margin-top: 2px;
+}
+.node-columns {
+  padding: 8px 0 10px;
+}
+.node-column {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 25px;
+  padding: 0 14px;
+  font-size: 10px;
+}
+.column-name {
+  flex: 1;
+}
+.column-type {
+  color: #647289;
+  font-size: 8px;
+}
+.key-badge {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  color: #b6c7e5;
+  background: #7797c41a;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 9px;
+}
+.key-badge.foreign {
+  color: #b99eea;
+  background: #aa79e318;
+}
+.table-node .react-flow__handle {
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--node-color);
+  background: #152332;
+  opacity: 0.6;
+}
+.react-flow__controls {
+  border: 1px solid #323c4f;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: none;
+}
+.react-flow__controls-button {
+  background: #1a2230 !important;
+  border-bottom-color: #333c4a !important;
+  color: #bec9dc;
+}
+.react-flow__minimap {
+  background: #101721 !important;
+  border: 1px solid #2b3546;
+  border-radius: 7px;
+  width: 122px;
+  height: 80px;
+}
+.graph-legend {
+  position: absolute;
+  bottom: 20px;
+  left: 66px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  color: #7b8ba3;
+  pointer-events: none;
+}
+.legend-line {
+  display: inline-block;
+  width: 23px;
+  height: 2px;
+  background: #977dc8;
+}
+.graph-legend > span:last-child {
+  color: #b3a2d0;
+}

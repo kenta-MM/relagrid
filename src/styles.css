@@ -1,0 +1,74 @@
+@import 'tailwindcss';
+@import './styles/shell.css';
+@import './styles/sidebar.css';
+@import './styles/graph.css';
+@import './styles/details.css';
+@import './styles/bottom-panel.css';
+@import './styles/connection.css';
+@import './styles/responsive.css';
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-primary: var(--primary);
+  --color-primary-foreground: #fff;
+  --color-secondary: #1a2130;
+  --color-accent: #252c40;
+  --color-muted-foreground: #8f9bb1;
+  --color-border: #293141;
+}
+:root {
+  font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif;
+  color: #e5eaf6;
+  background: #0e131d;
+  font-synthesis: none;
+  --background: #0e131d;
+  --foreground: #e5eaf6;
+  --card: #171e2b;
+  --primary: #7952e7;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 960px;
+}
+button,
+input {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: wait;
+}
+button:focus-visible,
+summary:focus-visible,
+input:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 3px;
+}
+.muted {
+  font-size: 11px;
+  color: #7f8da5;
+  line-height: 1.8;
+}
+.empty-sidebar {
+  color: #76849d;
+  font-size: 11px;
+  padding: 20px 10px;
+}
+.empty-sidebar svg {
+  margin-bottom: 10px;
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #354057;
+  border-radius: 4px;
+}

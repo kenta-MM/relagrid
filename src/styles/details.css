@@ -1,0 +1,185 @@
+.details-panel {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 18px 18px;
+  background: linear-gradient(140deg, #1b2030, #141c27);
+  border-left: 1px solid #2c3445;
+}
+.details-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.details-title h2 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+.tiny-label {
+  font-size: 8px;
+  color: #72809a;
+  letter-spacing: 1.5px;
+}
+.selected-table {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 24px 0 22px;
+}
+.detail-icon {
+  background: linear-gradient(135deg, #6139a15c, #38255488);
+  border-radius: 9px;
+  padding: 10px;
+  color: #b488fa;
+}
+.selected-table h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.selected-table p {
+  font-size: 11px;
+  color: #94a2bb;
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+.selected-label {
+  font-size: 9px;
+  color: #ba9dfb;
+  background: #6843ad33;
+  padding: 4px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.details-panel [role='tablist'] {
+  gap: 0;
+}
+.details-panel [role='tab'] {
+  padding: 10px 9px;
+  font-size: 10px;
+}
+.tab-count {
+  font-size: 9px;
+  color: #7d8da7;
+  margin-left: 3px;
+}
+.detail-section {
+  padding: 18px 0 0;
+}
+.detail-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 13px;
+}
+.detail-section h4 > svg {
+  color: #a9b4cb;
+}
+.detail-section h4 > span {
+  margin-left: auto;
+  color: #7b8ba4;
+  font-size: 10px;
+}
+.detail-section dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  font-size: 11px;
+  padding-left: 22px;
+  margin: 0;
+}
+.detail-section dt {
+  color: #929fb6;
+}
+.detail-section dd {
+  text-align: right;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.primary-key {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 0 8px 0 20px;
+  font-size: 12px;
+  color: #b8c4da;
+}
+.primary-key svg {
+  color: #e3c26b;
+}
+.relation-item {
+  width: 100%;
+  background: none;
+  border: 0;
+  display: flex;
+  text-align: left;
+  align-items: center;
+  gap: 11px;
+  padding: 8px;
+  border-radius: 5px;
+  color: #adc0de;
+  font-size: 11px;
+}
+.relation-item:hover {
+  background: #ffffff06;
+}
+.relation-item > svg:first-child {
+  color: #85b5e8;
+}
+.relation-item span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.relation-item small {
+  display: block;
+  font-size: 8px;
+  color: #72839f;
+  margin-top: 3px;
+}
+.detail-actions {
+  margin-top: auto;
+  padding-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.detail-actions button {
+  font-size: 11px;
+}
+.detail-actions p {
+  text-align: center;
+  color: #687891;
+  font-size: 9px;
+  margin: 7px 0 0;
+}
+.column-details > div {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid #293141;
+  gap: 4px;
+  padding: 11px 2px;
+}
+.column-details strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.column-details strong svg {
+  color: #dfbf62;
+}
+.column-details span {
+  font-size: 10px;
+  color: #a68acb;
+}
+.column-details small {
+  font-size: 8px;
+  color: #7d8ba2;
+}

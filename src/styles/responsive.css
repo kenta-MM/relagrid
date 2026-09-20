@@ -1,0 +1,41 @@
+@media (min-width: 1600px) {
+  .workspace {
+    grid-template-columns: 250px minmax(0, 1fr) 325px;
+  }
+  .details-panel {
+    padding: 25px 22px;
+  }
+  .app-header {
+    gap: 55px;
+  }
+  .bottom-panel {
+    height: 200px;
+  }
+}
+@media (max-width: 1150px) {
+  .workspace {
+    grid-template-columns: 195px minmax(0, 1fr) 255px;
+  }
+  .app-header {
+    gap: 18px;
+    padding: 0 16px;
+  }
+  .brand {
+    min-width: 180px;
+  }
+  .brand p {
+    font-size: 8px;
+  }
+  .connection-status {
+    display: none;
+  }
+  .map-stats {
+    display: none;
+  }
+  .details-panel {
+    padding: 20px 13px;
+  }
+  .header-actions {
+    gap: 8px;
+  }
+}
