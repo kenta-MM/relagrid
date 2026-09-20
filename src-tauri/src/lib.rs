@@ -1,7 +1,7 @@
 mod database;
 mod models;
 
-use models::{ConnectionConfig, Preview, SchemaSnapshot};
+use models::{ConnectionConfig, Preview, QueryResult, SchemaSnapshot};
 use sqlx::MySqlPool;
 use tauri::State;
 use tokio::sync::Mutex;
@@ -10,6 +10,7 @@ struct Session {
     pool: MySqlPool,
     database: String,
     snapshot: SchemaSnapshot,
+    read_only: bool,
 }
 #[derive(Default)]
 struct AppState {
@@ -34,6 +35,7 @@ async fn connect_database(
         pool,
         database: config.database,
         snapshot: snapshot.clone(),
+        read_only: config.read_only,
     });
     if let Some(old) = old {
         old.pool.close().await;
@@ -64,6 +66,17 @@ async fn preview_table(table_id: String, state: State<'_, AppState>) -> Result<P
 }
 
 #[tauri::command]
+async fn execute_query(
+    sql: String,
+    explain: bool,
+    state: State<'_, AppState>,
+) -> Result<QueryResult, String> {
+    let guard = state.session.lock().await;
+    let session = guard.as_ref().ok_or("データベースに接続してください。")?;
+    database::query::execute(&session.pool, &sql, session.read_only, explain).await
+}
+
+#[tauri::command]
 async fn disconnect_database(state: State<'_, AppState>) -> Result<(), String> {
     if let Some(session) = state.session.lock().await.take() {
         session.pool.close().await;
@@ -78,6 +91,7 @@ pub fn run() {
             connect_database,
             refresh_schema,
             preview_table,
+            execute_query,
             disconnect_database
         ])
         .run(tauri::generate_context!())

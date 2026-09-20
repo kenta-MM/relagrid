@@ -71,6 +71,36 @@ export const demoSnapshot: SchemaSnapshot = {
   })),
 };
 export const demoGateway: DatabaseGateway = {
+  async execute(sql, explain = false) {
+    const match = sql
+      .trim()
+      .match(/^SELECT\s+\*\s+FROM\s+(?:`?sales`?\.)?`?(\w+)`?(?:\s+LIMIT\s+(\d+))?\s*;?$/i);
+    const target = demoSnapshot.tables.find(
+      (t) => t.name.toLowerCase() === match?.[1].toLowerCase(),
+    );
+    if (!target || !match)
+      throw new Error(
+        'デモでは SELECT * FROM テーブル名 [LIMIT 件数] のみ試せます。任意のSQLはMySQL接続後に実行できます。',
+      );
+    if (explain)
+      return {
+        columns: ['table', 'type', 'Extra'],
+        rows: [[target.name, 'ALL', 'デモの実行計画（サンプル）']],
+        elapsedMs: 0,
+        affectedRows: 0,
+        truncated: false,
+        referencedTables: [target.name],
+      };
+    const preview = await demoGateway.preview(target);
+    return {
+      ...preview,
+      rows: preview.rows.slice(0, match[2] ? Number(match[2]) : undefined),
+      elapsedMs: 0,
+      affectedRows: 0,
+      truncated: false,
+      referencedTables: [target.name],
+    };
+  },
   async connect() {
     return demoSnapshot;
   },

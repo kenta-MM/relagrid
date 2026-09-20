@@ -17,6 +17,7 @@ interface Props {
   database: string;
   mode: string;
   busy: boolean;
+  readOnly: boolean;
   onSelect(id: string): void;
   onConnect(): void;
   onDemo(): void;
@@ -28,6 +29,7 @@ export function Sidebar({
   database,
   mode,
   busy,
+  readOnly,
   onSelect,
   onConnect,
   onDemo,
@@ -60,7 +62,9 @@ export function Sidebar({
         <span className={`status-dot ${mode === 'demo' ? 'demo' : ''}`} />
       </div>
       <div className="connection-caption">
-        {mode === 'demo' ? 'サンプルデータ · 接続不要' : 'MySQL · 読み取り専用'}
+        {mode === 'demo'
+          ? 'サンプルデータ · 接続不要'
+          : `MySQL · ${readOnly ? '読み取り専用' : '読み書き可能'}`}
       </div>
       <div className="section-label schemas-label">
         <span>

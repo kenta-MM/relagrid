@@ -13,6 +13,8 @@ export function useExplorer() {
   const [selected, setSelected] = useState('sales.Order');
   const [mode, setMode] = useState<'demo' | 'mysql'>('demo');
   const [database, setDatabase] = useState('SalesDB');
+  const [readOnly, setReadOnly] = useState(true);
+  const [sessionId, setSessionId] = useState(0);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
@@ -77,6 +79,8 @@ export function useExplorer() {
       gateway.current = mysqlGateway;
       setMode('mysql');
       setDatabase(config.database);
+      setReadOnly(config.readOnly ?? true);
+      setSessionId((value) => value + 1);
       accept(next);
       log(
         `MySQL 接続完了 · ${next.tables.length} tables / ${next.relationships.length} relationships`,
@@ -105,6 +109,8 @@ export function useExplorer() {
       gateway.current = demoGateway;
       setMode('demo');
       setDatabase('SalesDB');
+      setReadOnly(true);
+      setSessionId((value) => value + 1);
       accept(demoSnapshot);
       log('デモモードに切り替えました');
     } catch (error) {
@@ -136,7 +142,23 @@ export function useExplorer() {
       if (request === revision.current) setPreviewBusy(false);
     }
   }
+  async function execute(sql: string, explain = false) {
+    if (!beginOperation()) throw new Error('実行中の操作が完了するまでお待ちください。');
+    try {
+      return await gateway.current.execute(sql, explain);
+    } finally {
+      // A writable statement may have changed data even if its response failed.
+      if (!readOnly && !explain) {
+        previewsByTable.current.clear();
+        invalidatePreview();
+      }
+      endOperation();
+    }
+  }
   return {
+    execute,
+    readOnly,
+    sessionId,
     snapshot,
     selected,
     select,

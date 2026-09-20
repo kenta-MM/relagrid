@@ -28,6 +28,13 @@ export interface ConnectionConfig {
   username: string;
   password: string;
   database: string;
+  readOnly?: boolean;
+}
+export interface QueryResult extends Preview {
+  elapsedMs: number;
+  affectedRows: number;
+  truncated: boolean;
+  referencedTables: string[];
 }
 export interface Preview {
   columns: string[];
@@ -38,6 +45,7 @@ export interface DatabaseGateway {
   refresh(): Promise<SchemaSnapshot>;
   preview(table: Table): Promise<Preview>;
   disconnect(): Promise<void>;
+  execute(sql: string, explain?: boolean): Promise<QueryResult>;
 }
 export function relatedTableIds(snapshot: SchemaSnapshot, tableId: string): Set<string> {
   const result = new Set([tableId]);

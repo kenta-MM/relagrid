@@ -26,6 +26,53 @@ const config = {
 };
 
 describe('explorer request coordination', () => {
+  it('retains the active connection mode on failure and resets it on disconnect', async () => {
+    vi.spyOn(mysqlGateway, 'connect')
+      .mockResolvedValueOnce(demoSnapshot)
+      .mockRejectedValueOnce(new Error('failed'));
+    vi.spyOn(mysqlGateway, 'disconnect').mockResolvedValue();
+    const { result } = renderHook(useExplorer);
+    await act(async () => {
+      await result.current.connect({ ...config, readOnly: false });
+    });
+    expect(result.current.readOnly).toBe(false);
+    const sessionId = result.current.sessionId;
+    await act(async () => {
+      await expect(result.current.connect({ ...config, readOnly: true })).rejects.toThrow();
+    });
+    expect(result.current.readOnly).toBe(false);
+    expect(result.current.sessionId).toBe(sessionId);
+    await act(async () => {
+      await result.current.useDemo();
+    });
+    expect(result.current.readOnly).toBe(true);
+    expect(result.current.sessionId).toBeGreaterThan(sessionId);
+  });
+  it('blocks reconnect and refresh while SQL runs and releases the lock on error', async () => {
+    let reject!: (error: Error) => void;
+    vi.spyOn(demoGateway, 'execute').mockReturnValue(
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+    );
+    const refresh = vi.spyOn(demoGateway, 'refresh');
+    const { result } = renderHook(useExplorer);
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = result.current.execute('SELECT 1').catch((error) => error);
+    });
+    await act(async () => {
+      await result.current.refresh();
+      await expect(result.current.connect(config)).rejects.toThrow('実行中');
+    });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(result.current.busy).toBe(true);
+    await act(async () => {
+      reject(new Error('SQL failed'));
+      await pending;
+    });
+    expect(result.current.busy).toBe(false);
+  });
   it('restores each table preview without fetching again and replaces it on explicit reload', async () => {
     const order = { columns: ['order_id'], rows: [['1052']] };
     const customer = { columns: ['customer_id'], rows: [['7']] };

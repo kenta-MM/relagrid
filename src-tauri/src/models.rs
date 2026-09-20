@@ -8,6 +8,22 @@ pub struct ConnectionConfig {
     pub username: String,
     pub password: String,
     pub database: String,
+    #[serde(default = "default_read_only")]
+    pub read_only: bool,
+}
+fn default_read_only() -> bool {
+    true
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Option<String>>>,
+    pub elapsed_ms: u128,
+    pub affected_rows: u64,
+    pub truncated: bool,
+    pub referenced_tables: Vec<String>,
 }
 
 #[derive(Clone, Serialize)]

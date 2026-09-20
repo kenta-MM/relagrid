@@ -7,6 +7,7 @@ import { Sidebar } from '@/features/explorer/Sidebar';
 import { TableDetails } from '@/features/explorer/TableDetails';
 import { BottomPanel } from '@/features/explorer/BottomPanel';
 import { useExplorer } from '@/features/explorer/useExplorer';
+import { QueryWorkspace } from '@/features/query/QueryWorkspace';
 export function App() {
   const searchInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -31,6 +32,19 @@ export function App() {
   const [query, setQuery] = useState('');
   const [relatedOnly, setRelatedOnly] = useState(false);
   const [tab, setTab] = useState('activity');
+  const [screen, setScreen] = useState<'relations' | 'sql'>('relations');
+  const navigation = (
+    <nav className="view-switch" aria-label="画面切り替え">
+      <button aria-pressed={screen === 'relations'} onClick={() => setScreen('relations')}>
+        <GitBranch size={17} />
+        リレーション
+      </button>
+      <button aria-pressed={screen === 'sql'} onClick={() => setScreen('sql')}>
+        <Database size={17} />
+        SQL
+      </button>
+    </nav>
+  );
   const table = explorer.snapshot.tables.find((t) => t.id === explorer.selected);
   return (
     <div className="app-shell">
@@ -89,11 +103,15 @@ export function App() {
           database={explorer.database}
           mode={explorer.mode}
           busy={explorer.busy}
+          readOnly={explorer.readOnly}
           onSelect={explorer.select}
           onConnect={() => setConnectionOpen(true)}
           onDemo={() => void explorer.useDemo()}
         />
-        <main className="main-panel">
+        <main
+          className="main-panel"
+          style={{ display: screen === 'relations' ? undefined : 'none' }}
+        >
           <div className="map-heading">
             <div>
               <div className="eyebrow">
@@ -102,7 +120,8 @@ export function App() {
               <h2>リレーションシップマップ</h2>
               <p>テーブル間の関係と依存関係を視覚的に探索</p>
             </div>
-            <div className="map-stats">
+            {navigation}
+            <div className="map-stats relation-stats">
               <span>
                 <strong>{explorer.snapshot.tables.length}</strong> tables
               </span>
@@ -136,17 +155,33 @@ export function App() {
             onClear={explorer.clearLogs}
           />
         </main>
-        <TableDetails
-          table={table}
-          snapshot={explorer.snapshot}
-          relatedOnly={relatedOnly}
-          busy={explorer.busy || explorer.previewBusy}
-          onSelect={explorer.select}
-          onBrowse={() => {
-            setTab('preview');
-            void explorer.browse();
-          }}
-          onToggleRelated={() => setRelatedOnly((value) => !value)}
+        <div
+          className="relation-details"
+          style={{ display: screen === 'relations' ? 'contents' : 'none' }}
+        >
+          <TableDetails
+            table={table}
+            snapshot={explorer.snapshot}
+            relatedOnly={relatedOnly}
+            busy={explorer.busy || explorer.previewBusy}
+            onSelect={explorer.select}
+            onBrowse={() => {
+              setTab('preview');
+              void explorer.browse();
+            }}
+            onToggleRelated={() => setRelatedOnly((value) => !value)}
+          />
+        </div>
+        <QueryWorkspace
+          key={explorer.sessionId}
+          active={screen === 'sql'}
+          navigation={navigation}
+          tables={explorer.snapshot.tables}
+          selected={explorer.selected}
+          readOnly={explorer.readOnly}
+          busy={explorer.busy}
+          mode={explorer.mode}
+          execute={explorer.execute}
         />
       </div>
       <footer className="status-bar">
@@ -156,7 +191,8 @@ export function App() {
         </span>
         <span>
           <ShieldCheck size={12} />
-          READ ONLY<span className="footer-divider">|</span>RelaGrid 0.1.0
+          {explorer.readOnly ? 'READ ONLY' : 'READ / WRITE'}
+          <span className="footer-divider">|</span>RelaGrid 0.1.0
         </span>
       </footer>
       <ConnectionDialog

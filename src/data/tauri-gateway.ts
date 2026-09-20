@@ -1,5 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import type { DatabaseGateway, Preview, SchemaSnapshot } from '@/domain/database';
+import type { DatabaseGateway, Preview, QueryResult, SchemaSnapshot } from '@/domain/database';
 export const mysqlGateway: DatabaseGateway = {
   async connect(config) {
     if (!isTauri())
@@ -9,4 +9,5 @@ export const mysqlGateway: DatabaseGateway = {
   refresh: () => invoke<SchemaSnapshot>('refresh_schema'),
   preview: (table) => invoke<Preview>('preview_table', { tableId: table.id }),
   disconnect: () => invoke<void>('disconnect_database'),
+  execute: (sql, explain = false) => invoke<QueryResult>('execute_query', { sql, explain }),
 };

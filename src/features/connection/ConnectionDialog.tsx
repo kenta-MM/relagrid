@@ -23,6 +23,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
         username: String(form.get('username')),
         password: String(form.get('password')),
         database: String(form.get('database')).trim(),
+        readOnly: form.get('readOnly') === 'on',
       });
       onOpenChange(false);
     } catch (error) {
@@ -54,7 +55,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
         </div>
         <DialogTitle className="text-xl font-semibold">MySQLに接続</DialogTitle>
         <DialogDescription className="mt-2 mb-6 text-sm text-muted-foreground">
-          ローカルのデータベースを読み取り専用で探索します。
+          データベースと、この接続での読み取りモードを設定します。
         </DialogDescription>
         <form onSubmit={submit} className="connection-form">
           <div className="form-pair">
@@ -79,8 +80,12 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
             パスワード
             <input name="password" type="password" autoComplete="current-password" />
           </label>
+          <label className="read-only-option">
+            <input name="readOnly" type="checkbox" defaultChecked />
+            読み取り専用
+          </label>
           <p className="text-xs text-muted-foreground">
-            パスワードはファイルに保存されません。SELECT権限のあるユーザーを指定してください。
+            チェックを外すと更新SQLを実行できます（DBユーザーの権限内）。パスワードはファイルに保存されません。
           </p>
           {error && (
             <p role="alert" className="error-message">

@@ -20,14 +20,19 @@ pub async fn connect(config: &ConnectionConfig) -> Result<MySqlPool, String> {
         .username(&config.username)
         .password(&config.password)
         .database(&config.database);
+    let read_only = config.read_only;
     MySqlPoolOptions::new()
         .max_connections(3)
         .acquire_timeout(Duration::from_secs(8))
-        .after_connect(|connection, _| {
+        .after_connect(move |connection, _| {
             Box::pin(async move {
-                sqlx::query("SET SESSION TRANSACTION READ ONLY")
-                    .execute(&mut *connection)
-                    .await?;
+                sqlx::query(if read_only {
+                    "SET SESSION TRANSACTION READ ONLY"
+                } else {
+                    "SET SESSION TRANSACTION READ WRITE"
+                })
+                .execute(&mut *connection)
+                .await?;
                 sqlx::query("SET SESSION MAX_EXECUTION_TIME=5000")
                     .execute(&mut *connection)
                     .await?;
@@ -154,6 +159,7 @@ mod tests {
                     username: "root".into(),
                     password: String::new(),
                     database: "relagrid_fixture".into(),
+                    read_only: true,
                 };
                 let pool = connect(&config).await.expect("fixture connection");
                 let snapshot = schema(&pool, &config.database).await.expect("schema");
@@ -184,7 +190,68 @@ mod tests {
                         .execute(&pool)
                         .await;
                 assert!(write.is_err(), "read-only session must reject writes");
+                let result = crate::database::query::execute(
+                    &pool,
+                    "SELECT 1234.50 AS amount, NULL AS memo, X'00FF' AS payload, '青木' AS name",
+                    true,
+                    false,
+                )
+                .await
+                .unwrap();
+                assert_eq!(result.columns, ["amount", "memo", "payload", "name"]);
+                assert_eq!(
+                    result.rows[0],
+                    [
+                        Some("1234.50".into()),
+                        None,
+                        Some("00FF".into()),
+                        Some("青木".into())
+                    ]
+                );
+                let empty = crate::database::query::execute(
+                    &pool,
+                    "SELECT * FROM Customer WHERE 1=0",
+                    true,
+                    false,
+                )
+                .await
+                .unwrap();
+                assert!(empty.rows.is_empty());
+                assert_eq!(empty.columns.len(), 3);
+                assert!(crate::database::query::execute(
+                    &pool,
+                    "UPDATE Customer SET name=name WHERE customer_id=1",
+                    true,
+                    false
+                )
+                .await
+                .is_err());
                 pool.close().await;
+                let writable = connect(&ConnectionConfig {
+                    read_only: false,
+                    ..config
+                })
+                .await
+                .unwrap();
+                let update = crate::database::query::execute(
+                    &writable,
+                    "UPDATE Customer SET name=name WHERE customer_id=1",
+                    false,
+                    false,
+                )
+                .await
+                .unwrap();
+                assert_eq!(update.affected_rows, 1);
+                let plan = crate::database::query::execute(
+                    &writable,
+                    "SELECT * FROM Customer",
+                    false,
+                    true,
+                )
+                .await
+                .unwrap();
+                assert!(!plan.rows.is_empty());
+                writable.close().await;
             });
     }
 }

@@ -5,6 +5,7 @@
 @import './styles/details.css';
 @import './styles/bottom-panel.css';
 @import './styles/connection.css';
+@import './styles/query.css';
 @import './styles/responsive.css';
 @theme inline {
   --color-background: var(--background);
