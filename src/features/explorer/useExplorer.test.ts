@@ -26,6 +26,64 @@ const config = {
 };
 
 describe('explorer request coordination', () => {
+  it('retains grouped and ungrouped connections and reconnects without duplicating entries', async () => {
+    const connect = vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
+    vi.spyOn(mysqlGateway, 'disconnect').mockResolvedValue();
+    const { result } = renderHook(useExplorer);
+    await act(async () => {
+      await result.current.connect({ ...config, group: ' 本番環境 ', readOnly: false });
+    });
+    const first = result.current.activeConnectionId!;
+    await act(async () => {
+      await result.current.connect({ ...config, database: 'billing', group: '本番環境' });
+    });
+    await act(async () => {
+      await result.current.connect({ ...config, database: 'local', group: '  ' });
+    });
+    expect(result.current.connections.map((entry) => entry.group)).toEqual([
+      '本番環境',
+      '本番環境',
+      undefined,
+    ]);
+    expect(result.current.connections[0]).not.toHaveProperty('password');
+    await act(async () => {
+      await result.current.selectConnection(first);
+    });
+    expect(connect).toHaveBeenLastCalledWith({ ...config, group: '本番環境', readOnly: false });
+    expect(result.current.connections).toHaveLength(3);
+    expect(result.current.activeConnectionId).toBe(first);
+    expect(result.current.readOnly).toBe(false);
+    await act(async () => {
+      await result.current.useDemo();
+    });
+    expect(result.current.activeConnectionId).toBeNull();
+    expect(result.current.connections).toHaveLength(3);
+    await act(async () => {
+      await result.current.selectConnection(first);
+    });
+    expect(result.current.mode).toBe('mysql');
+  });
+
+  it('preserves the active connection when switching to another connection fails', async () => {
+    const connect = vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
+    const { result } = renderHook(useExplorer);
+    await act(async () => {
+      await result.current.connect(config);
+    });
+    const first = result.current.activeConnectionId!;
+    await act(async () => {
+      await result.current.connect({ ...config, database: 'billing' });
+    });
+    const active = result.current.activeConnectionId;
+    connect.mockRejectedValueOnce(new Error('Connection unavailable'));
+    await act(async () => {
+      await result.current.selectConnection(first);
+    });
+    expect(result.current.activeConnectionId).toBe(active);
+    expect(result.current.database).toBe('billing');
+    expect(result.current.connectionError).toBe('Connection unavailable');
+    expect(result.current.connections).toHaveLength(2);
+  });
   it('retains the active connection mode on failure and resets it on disconnect', async () => {
     vi.spyOn(mysqlGateway, 'connect')
       .mockResolvedValueOnce(demoSnapshot)

@@ -1,7 +1,13 @@
 import { useCallback, useRef, useState } from 'react';
 import { demoGateway, demoSnapshot } from '@/data/demo';
 import { mysqlGateway } from '@/data/tauri-gateway';
-import type { ConnectionConfig, DatabaseGateway, Preview, SchemaSnapshot } from '@/domain/database';
+import type {
+  ConnectionConfig,
+  ConnectionEntry,
+  DatabaseGateway,
+  Preview,
+  SchemaSnapshot,
+} from '@/domain/database';
 export interface LogEntry {
   id: number;
   time: string;
@@ -14,6 +20,12 @@ export function useExplorer() {
   const [mode, setMode] = useState<'demo' | 'mysql'>('demo');
   const [database, setDatabase] = useState('SalesDB');
   const [readOnly, setReadOnly] = useState(true);
+  const [connections, setConnections] = useState<ConnectionEntry[]>([]);
+  const [activeConnectionId, setActiveConnectionId] = useState<number | null>(null);
+  const [connectionError, setConnectionError] = useState('');
+  // Credentials are kept only in memory for reconnecting during this app session.
+  const connectionConfigs = useRef(new Map<number, ConnectionConfig>());
+  const nextConnectionId = useRef(1);
   const [sessionId, setSessionId] = useState(0);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -72,10 +84,27 @@ export function useExplorer() {
       next.tables.some((t) => t.id === current) ? current : next.tables[0]?.id || '',
     );
   }
-  async function connect(config: ConnectionConfig) {
+  async function connect(config: ConnectionConfig, existingId?: number) {
     if (!beginOperation()) throw new Error('実行中の操作が完了するまでお待ちください。');
     try {
       const next = await mysqlGateway.connect(config);
+      const id = existingId ?? nextConnectionId.current++;
+      const group = config.group?.trim() || undefined;
+      connectionConfigs.current.set(id, { ...config, group });
+      if (existingId === undefined) {
+        setConnections((current) => [
+          ...current,
+          {
+            id,
+            database: config.database,
+            group,
+            host: config.host,
+            port: config.port,
+          },
+        ]);
+      }
+      setActiveConnectionId(id);
+      setConnectionError('');
       gateway.current = mysqlGateway;
       setMode('mysql');
       setDatabase(config.database);
@@ -87,6 +116,19 @@ export function useExplorer() {
       );
     } finally {
       endOperation();
+    }
+  }
+  async function selectConnection(id: number) {
+    if (operationInFlight.current || id === activeConnectionId) return;
+    const config = connectionConfigs.current.get(id);
+    if (!config) return;
+    setConnectionError('');
+    try {
+      await connect(config, id);
+    } catch (error) {
+      const message = String(error instanceof Error ? error.message : error);
+      setConnectionError(message);
+      log(message, true);
     }
   }
   async function refresh() {
@@ -108,6 +150,8 @@ export function useExplorer() {
       await gateway.current.disconnect();
       gateway.current = demoGateway;
       setMode('demo');
+      setActiveConnectionId(null);
+      setConnectionError('');
       setDatabase('SalesDB');
       setReadOnly(true);
       setSessionId((value) => value + 1);
@@ -156,6 +200,10 @@ export function useExplorer() {
     }
   }
   return {
+    connections,
+    activeConnectionId,
+    connectionError,
+    selectConnection,
     execute,
     readOnly,
     sessionId,

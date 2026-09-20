@@ -23,12 +23,20 @@ export interface SchemaSnapshot {
   relationships: Relationship[];
 }
 export interface ConnectionConfig {
+  group?: string;
   host: string;
   port: number;
   username: string;
   password: string;
   database: string;
   readOnly?: boolean;
+}
+export interface ConnectionEntry {
+  id: number;
+  database: string;
+  group?: string;
+  host: string;
+  port: number;
 }
 export interface QueryResult extends Preview {
   elapsedMs: number;

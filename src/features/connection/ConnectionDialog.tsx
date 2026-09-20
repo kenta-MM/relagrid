@@ -23,6 +23,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
         username: String(form.get('username')),
         password: String(form.get('password')),
         database: String(form.get('database')).trim(),
+        group: String(form.get('group') ?? '').trim() || undefined,
         readOnly: form.get('readOnly') === 'on',
       });
       onOpenChange(false);
@@ -43,6 +44,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
       }}
     >
       <DialogContent
+        className="max-h-[calc(100dvh-32px)] overflow-y-auto"
         onEscapeKeyDown={(event) => {
           if (busy) event.preventDefault();
         }}
@@ -71,6 +73,10 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
           <label>
             データベース名
             <input name="database" placeholder="例：sales" required />
+          </label>
+          <label>
+            グループ名（任意）
+            <input name="group" placeholder="例：本番環境（未入力ならグループ化しません）" />
           </label>
           <label>
             ユーザー名

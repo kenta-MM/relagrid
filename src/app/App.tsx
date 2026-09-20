@@ -101,6 +101,10 @@ export function App() {
           selected={explorer.selected}
           query={query}
           database={explorer.database}
+          connections={explorer.connections}
+          activeConnectionId={explorer.activeConnectionId}
+          connectionError={explorer.connectionError}
+          onSelectConnection={(id) => void explorer.selectConnection(id)}
           mode={explorer.mode}
           busy={explorer.busy}
           readOnly={explorer.readOnly}

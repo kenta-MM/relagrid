@@ -26,20 +26,102 @@
   color: #9c7bde;
 }
 .connection-item {
+  width: 100%;
+  text-align: left;
+  color: #b1bdd3;
   display: flex;
   align-items: center;
   gap: 11px;
-  background: linear-gradient(90deg, #55399777, #2b3555aa);
-  border: 1px solid #7355af55;
-  border-left: 2px solid #a27bfc;
+  background: transparent;
+  border: 1px solid transparent;
+  border-left: 2px solid transparent;
   border-radius: 6px;
   padding: 10px 12px;
   font-size: 13px;
 }
+.connection-item.active {
+  background: linear-gradient(90deg, #55399777, #2b3555aa);
+  border-color: #7355af55;
+  border-left-color: #a27bfc;
+  color: #e0d7ff;
+}
+.connection-item:hover:not(:disabled) {
+  background-color: #ffffff08;
+}
+.connection-item:disabled {
+  opacity: 0.6;
+}
+.connection-item:focus-visible,
+.connection-group summary:focus-visible {
+  outline: 2px solid #a27bfc;
+  outline-offset: -2px;
+}
+.connection-tree {
+  overflow-y: auto;
+  max-height: 40%;
+  flex-shrink: 0;
+  min-height: 0;
+}
+.connection-group {
+  margin-bottom: 8px;
+}
+.connection-group summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 5px;
+  color: #b1bdd3;
+  font-size: 12px;
+  list-style: none;
+  cursor: pointer;
+}
+.connection-group:not([open]) summary > svg {
+  transform: rotate(-90deg);
+}
+.group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-count {
+  color: #98a6bf;
+  font-size: 11px;
+}
+.group-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.group-color-0 {
+  background: #ff647c;
+}
+.group-color-1 {
+  background: #38d99c;
+}
+.group-color-2 {
+  background: #ffc464;
+}
+.group-color-3 {
+  background: #a27bfc;
+}
+.group-color-4 {
+  background: #75b8ff;
+}
+.group-color-5 {
+  background: #ef94d4;
+}
+.connection-group-items {
+  padding-left: 17px;
+}
 .connection-item > svg {
+  flex-shrink: 0;
   color: #98b9ff;
 }
 .connection-item strong {
+  white-space: nowrap;
   flex: 1;
   font-weight: 500;
   overflow: hidden;
