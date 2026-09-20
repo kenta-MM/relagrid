@@ -1,6 +1,35 @@
 # RelaGrid
 
-Tauri + React + TypeScript + React Flow + shadcn/ui による、Windowsデスクトップ専用の読み取り専用MySQLデータベース探索アプリです。
+[![Tauri](https://img.shields.io/badge/Tauri-2.0.0-24C8DB?logo=tauri)](https://tauri.app/)
+[![React](https://img.shields.io/badge/React-19.0.0-61DAFB?logo=react)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7.3-3178C6?logo=typescript)](https://www.typescriptlang.org/)
+[![Rust](https://img.shields.io/badge/Rust-1.94.0-000000?logo=rust)](https://www.rust-lang.org/)
+[![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql)](https://www.mysql.com/)
+[![Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D6?logo=microsoft)](https://www.microsoft.com/windows)
+
+RelaGrid は、MySQL のスキーマを可視化し、テーブル関係とデータの流れを探索できる Windows デスクトップアプリです。
+
+Tauri + React + TypeScript + React Flow + shadcn/ui を採用し、読み取り専用で MySQL を安全に調査できます。
+
+## 技術スタック
+
+- アプリバージョン: `0.1.0`
+- 言語:
+  - TypeScript `~5.7.3`
+  - Rust `1.94.0` (toolchain)
+  - SQL / MySQL `8.0.44`（検証環境）
+- フレームワーク・基盤:
+  - React `19.0.0`
+  - Vite `6.4.0`
+  - Tauri `2.0.0`
+  - React Flow `12.8.0`
+  - Tailwind CSS `4.0.0`
+  - shadcn/ui（Radix ベースの UI コンポーネント群）
+  - Playwright `1.55.0`
+- 実行環境:
+  - Windows 11 / Windows 10 向けデスクトップアプリ
+  - WebView2 依存
+  - MySQL 8.0 を対象とした読み取り専用アクセス
 
 ## 起動
 
