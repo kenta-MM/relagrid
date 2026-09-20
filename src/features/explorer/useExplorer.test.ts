@@ -26,6 +26,51 @@ const config = {
 };
 
 describe('explorer request coordination', () => {
+  it('groups the demo connection without creating a MySQL connection or changing its session', () => {
+    const connect = vi.spyOn(mysqlGateway, 'connect');
+    const { result } = renderHook(useExplorer);
+    act(() => result.current.addConnectionGroup('テスト'));
+    act(() => result.current.moveConnection(0, 'テスト'));
+    expect(result.current.demoGroup).toBe('テスト');
+    expect(result.current.mode).toBe('demo');
+    expect(result.current.sessionId).toBe(0);
+    expect(result.current.snapshot).toBe(demoSnapshot);
+    expect(connect).not.toHaveBeenCalled();
+    act(() => result.current.moveConnection(0, 'missing'));
+    expect(result.current.demoGroup).toBe('テスト');
+    act(() => result.current.moveConnection(0));
+    expect(result.current.demoGroup).toBeUndefined();
+    expect(result.current.connectionGroups).toEqual(['テスト']);
+  });
+  it('moves connections into and out of groups without reconnecting and retains empty groups', async () => {
+    const connect = vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
+    const { result } = renderHook(useExplorer);
+    await act(async () => {
+      await result.current.connect({ ...config, group: '本番環境' });
+    });
+    const first = result.current.activeConnectionId!;
+    await act(async () => {
+      await result.current.connect({ ...config, database: 'local' });
+    });
+    const active = result.current.activeConnectionId!;
+    const session = result.current.sessionId;
+    act(() => result.current.moveConnection(active, '本番環境'));
+    expect(result.current.connections[1].group).toBe('本番環境');
+    act(() => {
+      result.current.moveConnection(first);
+      result.current.moveConnection(active);
+    });
+    expect(result.current.connections.every((entry) => !entry.group)).toBe(true);
+    expect(result.current.connectionGroups).toEqual(['本番環境']);
+    expect(result.current.activeConnectionId).toBe(active);
+    expect(result.current.sessionId).toBe(session);
+    expect(connect).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await result.current.selectConnection(first);
+    });
+    expect(connect).toHaveBeenLastCalledWith({ ...config, group: undefined });
+    expect(result.current.connections[0].group).toBeUndefined();
+  });
   it('retains grouped and ungrouped connections and reconnects without duplicating entries', async () => {
     const connect = vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
     vi.spyOn(mysqlGateway, 'disconnect').mockResolvedValue();

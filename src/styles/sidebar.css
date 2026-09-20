@@ -39,6 +39,13 @@
   padding: 10px 12px;
   font-size: 13px;
 }
+.connection-actions {
+  display: flex;
+}
+.connection-actions button {
+  width: 28px;
+  height: 28px;
+}
 .connection-item.active {
   background: linear-gradient(90deg, #55399777, #2b3555aa);
   border-color: #7355af55;
@@ -64,6 +71,35 @@
 }
 .connection-group {
   margin-bottom: 8px;
+  border-radius: 6px;
+}
+.connection-item[draggable='true'] {
+  cursor: grab;
+}
+.connection-item[draggable='true']:active {
+  cursor: grabbing;
+}
+.connection-ungroup-drop {
+  flex-shrink: 0;
+  margin-top: 6px;
+  border: 1px dashed #79639f;
+  border-radius: 6px;
+  padding: 10px;
+  color: #c3b5dc;
+  text-align: center;
+  font-size: 12px;
+}
+.connection-ungroup-drop span {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: #98a6bf;
+}
+.connection-group.drop-target,
+.connection-ungroup-drop.drop-target {
+  background: #7650bf33;
+  outline: 2px solid #a27bfc;
+  outline-offset: -2px;
 }
 .connection-group summary {
   display: flex;

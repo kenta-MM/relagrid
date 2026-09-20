@@ -102,6 +102,10 @@ export function App() {
           query={query}
           database={explorer.database}
           connections={explorer.connections}
+          connectionGroups={explorer.connectionGroups}
+          demoGroup={explorer.demoGroup}
+          onAddGroup={explorer.addConnectionGroup}
+          onMoveConnection={explorer.moveConnection}
           activeConnectionId={explorer.activeConnectionId}
           connectionError={explorer.connectionError}
           onSelectConnection={(id) => void explorer.selectConnection(id)}

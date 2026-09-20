@@ -38,6 +38,7 @@ export interface ConnectionEntry {
   host: string;
   port: number;
 }
+export const DEMO_CONNECTION_ID = 0;
 export interface QueryResult extends Preview {
   elapsedMs: number;
   affectedRows: number;

@@ -1,7 +1,9 @@
+import { useRef, useState, type DragEvent } from 'react';
 import {
   ChevronDown,
   Database,
   Folder,
+  FolderPlus,
   Table2,
   Layers3,
   Plus,
@@ -9,13 +11,19 @@ import {
   Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { GroupDialog } from '@/features/connection/GroupDialog';
 import type { ConnectionEntry, SchemaSnapshot } from '@/domain/database';
+import { DEMO_CONNECTION_ID } from '@/domain/database';
 interface Props {
   snapshot: SchemaSnapshot;
   selected: string;
   query: string;
   database: string;
   connections: ConnectionEntry[];
+  connectionGroups: string[];
+  demoGroup?: string;
+  onAddGroup(name: string): void;
+  onMoveConnection(id: number, group?: string): void;
   activeConnectionId: number | null;
   connectionError: string;
   onSelectConnection(id: number): void;
@@ -32,6 +40,10 @@ export function Sidebar({
   query,
   database,
   connections,
+  connectionGroups,
+  demoGroup,
+  onAddGroup,
+  onMoveConnection,
   activeConnectionId,
   connectionError,
   onSelectConnection,
@@ -42,33 +54,92 @@ export function Sidebar({
   onConnect,
   onDemo,
 }: Props) {
+  const [groupOpen, setGroupOpen] = useState(false);
+  const draggedId = useRef<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  function endDrag() {
+    draggedId.current = null;
+    setDragging(false);
+    setDropTarget(null);
+  }
+  function dropHandlers(group = '') {
+    return {
+      onDragOver(event: DragEvent<HTMLElement>) {
+        if (busy || draggedId.current === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = 'move';
+        setDropTarget(group);
+      },
+      onDragLeave(event: DragEvent<HTMLElement>) {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDropTarget((current) => (current === group ? null : current));
+        }
+      },
+      onDrop(event: DragEvent<HTMLElement>) {
+        if (busy || draggedId.current === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (
+          event.dataTransfer.getData('application/x-relagrid-connection') ===
+          String(draggedId.current)
+        ) {
+          onMoveConnection(draggedId.current, group || undefined);
+          if (event.currentTarget instanceof HTMLDetailsElement) event.currentTarget.open = true;
+        }
+        endDrag();
+      },
+    };
+  }
   const tables = snapshot.tables.filter((table) =>
     `${table.name} ${table.schema} ${table.columns.map((c) => c.name).join(' ')}`
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
   const schemas = [...new Set(tables.map((table) => table.schema))];
-  const groups = new Map<string, ConnectionEntry[]>();
-  for (const connection of connections) {
+  const groups = new Map<string, ConnectionEntry[]>(connectionGroups.map((group) => [group, []]));
+  const visibleConnections: ConnectionEntry[] =
+    mode === 'demo'
+      ? [{ id: DEMO_CONNECTION_ID, database, group: demoGroup, host: '', port: 0 }, ...connections]
+      : connections;
+  for (const connection of visibleConnections) {
     if (!connection.group) continue;
     const entries = groups.get(connection.group) ?? [];
     entries.push(connection);
     groups.set(connection.group, entries);
   }
   function connectionItem(connection: ConnectionEntry) {
-    const active = connection.id === activeConnectionId;
+    const demo = connection.id === DEMO_CONNECTION_ID;
+    const active = demo ? mode === 'demo' : connection.id === activeConnectionId;
     return (
       <button
         key={connection.id}
         className={`connection-item ${active ? 'active' : ''}`}
+        draggable={!busy}
+        onDragStart={(event) => {
+          if (busy) {
+            event.preventDefault();
+            return;
+          }
+          draggedId.current = connection.id;
+          event.dataTransfer.setData('application/x-relagrid-connection', String(connection.id));
+          event.dataTransfer.effectAllowed = 'move';
+          setDragging(true);
+        }}
+        onDragEnd={endDrag}
         onClick={() => onSelectConnection(connection.id)}
         disabled={busy}
         aria-pressed={active}
-        title={`${connection.database} · ${connection.host}:${connection.port}`}
+        title={
+          demo
+            ? 'サンプルデータ · 接続不要'
+            : `${connection.database} · ${connection.host}:${connection.port}`
+        }
       >
         <Database size={17} />
         <strong>{connection.database}</strong>
-        {active && <span className="status-dot" />}
+        {active && <span className={`status-dot ${demo ? 'demo' : ''}`} />}
       </button>
     );
   }
@@ -78,26 +149,35 @@ export function Sidebar({
         <span>
           <Database size={14} /> CONNECTIONS
         </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onConnect}
-          disabled={busy}
-          aria-label="接続を追加"
-        >
-          <Plus size={16} />
-        </Button>
+        <div className="connection-actions">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setGroupOpen(true)}
+            aria-label="グループを追加"
+            title="グループを追加"
+          >
+            <FolderPlus size={16} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onConnect}
+            disabled={busy}
+            aria-label="接続を追加"
+          >
+            <Plus size={16} />
+          </Button>
+        </div>
       </div>
-      <nav className="connection-tree" aria-label="接続一覧">
-        {mode === 'demo' && (
-          <div className="connection-item active">
-            <Database size={17} />
-            <strong>{database}</strong>
-            <span className="status-dot demo" />
-          </div>
-        )}
+      <nav className="connection-tree" aria-label="接続一覧" {...dropHandlers()}>
         {[...groups].map(([group, entries], index) => (
-          <details className="connection-group" open key={group}>
+          <details
+            className={`connection-group ${dropTarget === group ? 'drop-target' : ''}`}
+            open
+            key={group}
+            {...dropHandlers(group)}
+          >
             <summary title={group}>
               <ChevronDown size={13} />
               <span className={`group-dot group-color-${index % 6}`} />
@@ -107,8 +187,17 @@ export function Sidebar({
             <div className="connection-group-items">{entries.map(connectionItem)}</div>
           </details>
         ))}
-        {connections.filter((connection) => !connection.group).map(connectionItem)}
+        {visibleConnections.filter((connection) => !connection.group).map(connectionItem)}
       </nav>
+      {dragging && (
+        <div
+          className={`connection-ungroup-drop ${dropTarget === '' ? 'drop-target' : ''}`}
+          {...dropHandlers()}
+        >
+          グループ外へ移動
+          <span>ここにドロップ</span>
+        </div>
+      )}
       {connectionError && (
         <p role="alert" className="error-message">
           {connectionError}
@@ -174,6 +263,12 @@ export function Sidebar({
           RelaGrid <span>v0.1.0</span>
         </div>
       </div>
+      <GroupDialog
+        open={groupOpen}
+        onOpenChange={setGroupOpen}
+        groups={connectionGroups}
+        onAdd={onAddGroup}
+      />
     </aside>
   );
 }

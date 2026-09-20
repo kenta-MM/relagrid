@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { demoGateway, demoSnapshot } from '@/data/demo';
 import { mysqlGateway } from '@/data/tauri-gateway';
+import { DEMO_CONNECTION_ID } from '@/domain/database';
 import type {
   ConnectionConfig,
   ConnectionEntry,
@@ -21,6 +22,8 @@ export function useExplorer() {
   const [database, setDatabase] = useState('SalesDB');
   const [readOnly, setReadOnly] = useState(true);
   const [connections, setConnections] = useState<ConnectionEntry[]>([]);
+  const [connectionGroups, setConnectionGroups] = useState<string[]>([]);
+  const [demoGroup, setDemoGroup] = useState<string | undefined>();
   const [activeConnectionId, setActiveConnectionId] = useState<number | null>(null);
   const [connectionError, setConnectionError] = useState('');
   // Credentials are kept only in memory for reconnecting during this app session.
@@ -84,12 +87,33 @@ export function useExplorer() {
       next.tables.some((t) => t.id === current) ? current : next.tables[0]?.id || '',
     );
   }
+  function addConnectionGroup(name: string) {
+    const group = name.trim();
+    if (!group) return;
+    setConnectionGroups((current) => (current.includes(group) ? current : [...current, group]));
+  }
+  function moveConnection(id: number, name?: string) {
+    if (operationInFlight.current) return;
+    const group = name?.trim() || undefined;
+    if (group && !connectionGroups.includes(group)) return;
+    if (id === DEMO_CONNECTION_ID) {
+      setDemoGroup(group);
+      return;
+    }
+    const config = connectionConfigs.current.get(id);
+    if (!config) return;
+    connectionConfigs.current.set(id, { ...config, group });
+    setConnections((current) =>
+      current.map((entry) => (entry.id === id ? { ...entry, group } : entry)),
+    );
+  }
   async function connect(config: ConnectionConfig, existingId?: number) {
     if (!beginOperation()) throw new Error('実行中の操作が完了するまでお待ちください。');
     try {
       const next = await mysqlGateway.connect(config);
       const id = existingId ?? nextConnectionId.current++;
       const group = config.group?.trim() || undefined;
+      if (group) addConnectionGroup(group);
       connectionConfigs.current.set(id, { ...config, group });
       if (existingId === undefined) {
         setConnections((current) => [
@@ -200,6 +224,10 @@ export function useExplorer() {
     }
   }
   return {
+    demoGroup,
+    connectionGroups,
+    addConnectionGroup,
+    moveConnection,
     connections,
     activeConnectionId,
     connectionError,
