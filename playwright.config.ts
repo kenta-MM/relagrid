@@ -7,7 +7,7 @@ export default defineConfig({
     channel: 'msedge',
   },
   webServer: {
-    command: 'npm run dev:web',
+    command: 'npm run dev:ui',
     url: 'http://127.0.0.1:1420',
     reuseExistingServer: true,
   },

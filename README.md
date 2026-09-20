@@ -1,6 +1,6 @@
 # RelaGrid
 
-Tauri + React + TypeScript + React Flow + shadcn/ui による、読み取り専用のMySQLデータベース探索アプリです。
+Tauri + React + TypeScript + React Flow + shadcn/ui による、Windowsデスクトップ専用の読み取り専用MySQLデータベース探索アプリです。
 
 ## 起動
 
@@ -15,7 +15,7 @@ npm run dev
 
 起動時はデモモードです。「接続」からホスト（既定 `127.0.0.1`）、ポート（既定 `3306`）、DB名、ユーザー名、パスワードを入力すると実際のMySQLを探索できます。接続情報はディスクに保存しません。閲覧専用ユーザーの利用を推奨します。
 
-画面だけをブラウザーで確認する場合は `npm run dev:web` を使用してください。このモードではデモが動きますが、MySQL接続はデスクトップ版専用です。
+React・ViteはTauri内の画面を構築するために使用します。`dev:ui` はTauriと画面テストが内部で呼び出す開発サーバー用コマンドです。通常の開発では `npm run dev`、アプリ全体のビルドでは `npm run build:desktop` を使用してください。`npm run build` はアプリに組み込む画面部分を生成する内部工程です。ブラウザ版の配布は対象にしていません。
 
 ## 実装済み
 
@@ -66,7 +66,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 npm run check:rust
 ```
 
-E2Eはインストール済みのMicrosoft Edgeを使います。レイアウト・循環参照・関連ノードの単体テストと、検索・選択・プレビュー・接続エラーの操作テストがあります。
+画面のE2Eは、デスクトップ版と共通のReact画面をインストール済みのMicrosoft Edge上で検証します。ブラウザ版製品のためではなく、画面の回帰テスト用です。レイアウト・循環参照・関連ノードの単体テストと、検索・選択・プレビュー・接続エラーの操作テストがあります。実際のTauri通信の検証は `tests/native-smoke.mjs` が担当します。
 
 MySQL統合テストは通常スキップします。**検証用の独立したMySQL**を `127.0.0.1:3307` に立て、`tests/fixtures/schema.sql` を投入してから実行してください。ユーザーは `root`、空パスワード、DBは `relagrid_fixture` です。既存の業務DBには投入しないでください。
 
@@ -83,6 +83,8 @@ npm run build:desktop
 ```
 
 Windowsインストーラーは `src-tauri/target/release/bundle/nsis/` に出力されます。配布版では開発サーバーやNode.jsは不要です。コード署名は未設定です。
+
+アイコンはWindows用の `src-tauri/icons/icon.ico` と、再生成用の元画像 `source.png` のみ管理します。
 
 ## 初期版の範囲
 
