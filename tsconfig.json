@@ -11,7 +11,8 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] }
+    "paths": { "@/*": ["src/*"] },
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src", "vite.config.ts"]
 }
