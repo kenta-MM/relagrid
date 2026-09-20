@@ -26,6 +26,89 @@ const config = {
 };
 
 describe('explorer request coordination', () => {
+  it('restores each table preview without fetching again and replaces it on explicit reload', async () => {
+    const order = { columns: ['order_id'], rows: [['1052']] };
+    const customer = { columns: ['customer_id'], rows: [['7']] };
+    const updatedOrder = { columns: ['order_id'], rows: [['1053']] };
+    const fetchPreview = vi
+      .spyOn(demoGateway, 'preview')
+      .mockResolvedValueOnce(order)
+      .mockResolvedValueOnce(customer)
+      .mockResolvedValueOnce(updatedOrder);
+    const { result } = renderHook(useExplorer);
+    await act(async () => {
+      await result.current.browse();
+    });
+    act(() => result.current.select('sales.Customer'));
+    expect(result.current.preview).toBeNull();
+    await act(async () => {
+      await result.current.browse();
+    });
+    act(() => result.current.select('sales.Order'));
+    expect(result.current.preview).toBe(order);
+    act(() => result.current.select('sales.Customer'));
+    expect(result.current.preview).toBe(customer);
+    expect(fetchPreview).toHaveBeenCalledTimes(2);
+    act(() => result.current.select('sales.Order'));
+    await act(async () => {
+      await result.current.browse();
+    });
+    act(() => result.current.select('sales.Customer'));
+    act(() => result.current.select('sales.Order'));
+    expect(result.current.preview).toBe(updatedOrder);
+    expect(fetchPreview).toHaveBeenCalledTimes(3);
+  });
+
+  it('also retains successful empty previews', async () => {
+    const empty = { columns: ['order_id'], rows: [] };
+    vi.spyOn(demoGateway, 'preview').mockResolvedValue(empty);
+    const { result } = renderHook(useExplorer);
+    await act(async () => {
+      await result.current.browse();
+    });
+    act(() => result.current.select('sales.Customer'));
+    act(() => result.current.select('sales.Order'));
+    expect(result.current.preview).toBe(empty);
+  });
+
+  it.each(['refresh', 'connect', 'useDemo'] as const)(
+    'clears cached previews after %s succeeds',
+    async (operation) => {
+      vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
+      vi.spyOn(demoGateway, 'preview').mockResolvedValue({
+        columns: ['order_id'],
+        rows: [['1052']],
+      });
+      const { result } = renderHook(useExplorer);
+      await act(async () => {
+        await result.current.browse();
+      });
+      await act(async () => {
+        if (operation === 'connect') await result.current.connect(config);
+        else await result.current[operation]();
+      });
+      act(() => result.current.select('sales.Customer'));
+      act(() => result.current.select('sales.Order'));
+      expect(result.current.preview).toBeNull();
+    },
+  );
+
+  it('retains cached previews when a connection attempt fails', async () => {
+    const cached = { columns: ['order_id'], rows: [['1052']] };
+    vi.spyOn(demoGateway, 'preview').mockResolvedValue(cached);
+    vi.spyOn(mysqlGateway, 'connect').mockRejectedValue(new Error('Access denied'));
+    const { result } = renderHook(useExplorer);
+    await act(async () => {
+      await result.current.browse();
+    });
+    await act(async () => {
+      await expect(result.current.connect(config)).rejects.toThrow('Access denied');
+    });
+    act(() => result.current.select('sales.Customer'));
+    act(() => result.current.select('sales.Order'));
+    expect(result.current.preview).toBe(cached);
+  });
+
   it('discards a delayed preview after selecting a different table', async () => {
     const response = deferred<Preview>();
     vi.spyOn(demoGateway, 'preview').mockReturnValue(response.promise);
@@ -44,6 +127,8 @@ describe('explorer request coordination', () => {
     expect(result.current.selected).toBe('sales.Customer');
     expect(result.current.preview).toBeNull();
     expect(result.current.previewBusy).toBe(false);
+    act(() => result.current.select('sales.Order'));
+    expect(result.current.preview).toBeNull();
   });
 
   it('preserves the current snapshot on a failed connection', async () => {

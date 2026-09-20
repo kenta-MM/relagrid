@@ -26,6 +26,8 @@ export function useExplorer() {
     },
   ]);
   const gateway = useRef<DatabaseGateway>(demoGateway);
+  // Cache belongs to this connection/schema session and never persists to disk.
+  const previewsByTable = useRef(new Map<string, Preview>());
   const revision = useRef(0);
   const operationInFlight = useRef(false);
   const logId = useRef(1);
@@ -58,8 +60,10 @@ export function useExplorer() {
   function select(id: string) {
     invalidatePreview();
     setSelected(id);
+    setPreview(previewsByTable.current.get(id) ?? null);
   }
   function accept(next: SchemaSnapshot) {
+    previewsByTable.current.clear();
     invalidatePreview();
     setSnapshot(next);
     setSelected((current) =>
@@ -120,6 +124,7 @@ export function useExplorer() {
     try {
       const result = await gateway.current.preview(table);
       if (request !== revision.current) return;
+      previewsByTable.current.set(table.id, result);
       setPreview(result);
       log(`${table.name} · ${result.rows.length} 件をプレビュー`);
     } catch (error) {

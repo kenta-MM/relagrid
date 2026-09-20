@@ -16,6 +16,28 @@ test('explores a table, searches columns, and previews data', async ({ page }) =
   await expect(page.locator('.data-table')).toHaveCount(0);
   await page.getByRole('button', { name: '検索をクリア' }).click();
   await expect(page.locator('.tree-table')).toHaveCount(7);
+  await page
+    .locator('.tree-table')
+    .filter({ hasText: /^Order$/ })
+    .click();
+  await expect(page.locator('.data-table tbody tr')).toHaveCount(8);
+  await expect(page.locator('.data-table th').first()).toHaveText('order_id');
+  await page
+    .locator('.tree-table')
+    .filter({ hasText: /^Customer$/ })
+    .click();
+  await page.getByRole('button', { name: 'データを表示', exact: true }).click();
+  await expect(page.locator('.data-table th').first()).toHaveText('customer_id');
+  await page
+    .locator('.tree-table')
+    .filter({ hasText: /^Order$/ })
+    .click();
+  await expect(page.locator('.data-table th').first()).toHaveText('order_id');
+  await page
+    .locator('.tree-table')
+    .filter({ hasText: /^Customer$/ })
+    .click();
+  await expect(page.locator('.data-table th').first()).toHaveText('customer_id');
   await page.getByRole('button', { name: '関連テーブルを強調' }).click();
   await expect(page.locator('.table-node.is-muted')).toHaveCount(5);
   await page.getByRole('button', { name: 'すべての関係を表示' }).click();
