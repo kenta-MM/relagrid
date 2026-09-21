@@ -1,0 +1,9 @@
+{
+  "host": "127.0.0.1",
+  "port": 3306,
+  "database": "your_database",
+  "username": "your_username",
+  "password": "",
+  "group": "ローカル",
+  "readOnly": true
+}

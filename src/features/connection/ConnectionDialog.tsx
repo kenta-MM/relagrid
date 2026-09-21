@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent, type ChangeEvent } from 'react';
 import { Database, LoaderCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import type { ConnectionConfig } from '@/domain/database';
+import { parseConnectionFile } from './connection-file';
 interface Props {
   open: boolean;
   onOpenChange(open: boolean): void;
@@ -11,6 +12,31 @@ interface Props {
 export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [fileName, setFileName] = useState('');
+  const formRef = useRef<HTMLFormElement>(null);
+  async function importFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (file.size > 64 * 1024) throw new Error('接続ファイルは64KB以下にしてください。');
+      const config = parseConnectionFile(await file.text());
+      if (!formRef.current) return;
+      for (const [key, value] of Object.entries(config)) {
+        const input = formRef.current.elements.namedItem(key);
+        if (!(input instanceof HTMLInputElement)) continue;
+        if (input.type === 'checkbox') input.checked = Boolean(value);
+        else input.value = String(value ?? '');
+      }
+      setFileName(file.name);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '接続ファイルを読み込めませんでした。');
+    } finally {
+      setBusy(false);
+    }
+  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -26,6 +52,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
         group: String(form.get('group') ?? '').trim() || undefined,
         readOnly: form.get('readOnly') === 'on',
       });
+      setFileName('');
       onOpenChange(false);
     } catch (error) {
       setError(String(error instanceof Error ? error.message : error));
@@ -39,6 +66,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
       onOpenChange={(value) => {
         if (!busy) {
           setError('');
+          setFileName('');
           onOpenChange(value);
         }
       }}
@@ -59,7 +87,21 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
         <DialogDescription className="mt-2 mb-6 text-sm text-muted-foreground">
           データベースと、この接続での読み取りモードを設定します。
         </DialogDescription>
-        <form onSubmit={submit} className="connection-form">
+        <form ref={formRef} onSubmit={submit} className="connection-form">
+          <label>
+            接続ファイルを読み込む（JSON）
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={importFile}
+              disabled={busy}
+            />
+          </label>
+          {fileName && (
+            <p role="status" className="text-xs text-muted-foreground">
+              {fileName} を読み込みました。接続内容を確認してください。
+            </p>
+          )}
           <div className="form-pair">
             <label>
               ホスト
@@ -91,7 +133,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
             読み取り専用
           </label>
           <p className="text-xs text-muted-foreground">
-            チェックを外すと更新SQLを実行できます（DBユーザーの権限内）。パスワードはファイルに保存されません。
+            チェックを外すと更新SQLを実行できます（DBユーザーの権限内）。読み込んだ接続情報をアプリが自動保存することはありません。
           </p>
           {error && (
             <p role="alert" className="error-message">
