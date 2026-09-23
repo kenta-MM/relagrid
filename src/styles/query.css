@@ -153,6 +153,25 @@
   min-height: 0;
   overflow: auto;
 }
+.result-set-tabs {
+  display: flex;
+  overflow-x: auto;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #30394f;
+}
+.result-set-tabs button {
+  white-space: nowrap;
+  padding: 6px 10px;
+  color: #98a8c3;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.result-set-tabs button[aria-selected='true'] {
+  background: #7953c533;
+  color: #e1d3ff;
+}
 .query-data th {
   position: sticky;
   top: 0;

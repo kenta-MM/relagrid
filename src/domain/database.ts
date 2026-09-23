@@ -44,6 +44,13 @@ export interface QueryResult extends Preview {
   affectedRows: number;
   truncated: boolean;
   referencedTables: string[];
+  resultSets?: QueryResultSet[];
+  error?: string | null;
+}
+export interface QueryResultSet extends Preview {
+  affectedRows: number;
+  truncated: boolean;
+  complete: boolean;
 }
 export interface Preview {
   columns: string[];

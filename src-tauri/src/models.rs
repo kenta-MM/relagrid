@@ -24,6 +24,18 @@ pub struct QueryResult {
     pub affected_rows: u64,
     pub truncated: bool,
     pub referenced_tables: Vec<String>,
+    pub result_sets: Vec<QueryResultSet>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryResultSet {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Option<String>>>,
+    pub affected_rows: u64,
+    pub truncated: bool,
+    pub complete: bool,
 }
 
 #[derive(Clone, Serialize)]

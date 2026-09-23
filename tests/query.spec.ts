@@ -1,5 +1,72 @@
 import { test, expect } from '@playwright/test';
 
+test('switches independent result sets and displays partial failure without hiding retained rows', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.assign(window, {
+      isTauri: true,
+      __TAURI_INTERNALS__: {
+        invoke: async (command: string, args: { sql?: string }) => {
+          if (command === 'connect_database') return { tables: [], relationships: [] };
+          if (command !== 'execute_query') return;
+          const resultSets = [
+            {
+              columns: ['customer'],
+              rows: Array.from({ length: 100 }, (_, i) => [`customer-${i}`]),
+              affectedRows: 0,
+              complete: true,
+              truncated: false,
+            },
+            {
+              columns: ['product', 'price'],
+              rows: Array.from({ length: 100 }, (_, i) => [`product-${i}`, '500']),
+              affectedRows: 0,
+              complete: true,
+              truncated: false,
+            },
+          ];
+          return {
+            ...resultSets[0],
+            elapsedMs: 5,
+            referencedTables: [],
+            resultSets,
+            error: args.sql?.includes('fail')
+              ? '文3で失敗しました。取得済み結果を表示しています。'
+              : null,
+          };
+        },
+      },
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '接続を追加' }).click();
+  await page.getByLabel('データベース名').fill('fixture');
+  await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
+  await page.getByRole('button', { name: 'SQL', exact: true }).click();
+  const editor = page.getByRole('textbox', { name: 'SQLクエリ' });
+  await editor.fill('SELECT * FROM Customer; SELECT * FROM Product;');
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await expect(page.locator('.query-data')).toContainText('customer-0');
+  await page.getByRole('button', { name: '次へ', exact: true }).click();
+  await page.getByRole('tab', { name: '結果 2', exact: true }).click();
+  await expect(page.locator('.query-data')).toContainText('product-0');
+  await expect(page.locator('.query-data')).not.toContainText('customer-');
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'エクスポート', exact: true }).click();
+  expect((await download).suggestedFilename()).toBe('Query 2-result-2.csv');
+  await page.getByRole('tab', { name: 'Query 1', exact: true }).click();
+  await page.getByRole('tab', { name: 'Query 2', exact: true }).click();
+  await expect(page.getByRole('tab', { name: '結果 2' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: '結果 1', exact: true }).click();
+  await expect(page.locator('.query-data')).toContainText('customer-10');
+  await editor.fill("SELECT 'fail'; SELECT * FROM Product;");
+  await page.getByRole('button', { name: '実行', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('実行全体は失敗');
+  await expect(page.locator('.query-data')).toContainText('customer-0');
+  await page.screenshot({ path: 'test-results/query-multiple.png', fullPage: true });
+});
+
 test('separates SQL workspace, executes and preserves tabs across screen changes', async ({
   page,
 }) => {

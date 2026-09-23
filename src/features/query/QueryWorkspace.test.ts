@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { QueryWorkspace } from './QueryWorkspace';
-import type { QueryResult } from '@/domain/database';
+import type { QueryResult, QueryResultSet } from '@/domain/database';
 
 vi.mock('./SqlEditor', () => ({
   SqlEditor: ({
@@ -165,4 +165,102 @@ it('duplicates SQL without copying execution/results and retains the source conn
   expect(screen.queryByText('A result')).toBeNull();
   expect((screen.getByRole('button', { name: '実行' }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText(/サイドバーでこの接続/).textContent).toContain('DB A');
+});
+
+function multiResult(error?: string): QueryResult {
+  const sets: QueryResultSet[] = [
+    {
+      columns: ['a'],
+      rows: Array.from({ length: 100 }, (_, i) => [`A-${i}`]),
+      affectedRows: 0,
+      truncated: false,
+      complete: true,
+    },
+    {
+      columns: ['b', 'extra'],
+      rows: Array.from({ length: 100 }, (_, i) => [`B-${i}`, 'different']),
+      affectedRows: 0,
+      truncated: true,
+      complete: true,
+    },
+    { columns: ['empty_column'], rows: [], affectedRows: 0, truncated: false, complete: true },
+    { columns: [], rows: [], affectedRows: 4, truncated: false, complete: true },
+  ];
+  return { ...result, ...sets[0], resultSets: sets, affectedRows: 4, error };
+}
+
+it('keeps each result page, scroll and selection across editor switches without executing again', async () => {
+  const execute = vi.fn().mockResolvedValue(multiResult());
+  const { container } = setup(execute);
+  await act(async () => click('実行'));
+  click('次へ');
+  const scroll = container.querySelector('.query-result-scroll')!;
+  fireEvent.scroll(scroll, { target: { scrollTop: 75, scrollLeft: 20 } });
+  click('結果 2（省略あり）', 'tab');
+  expect(screen.getByText('B-0')).toBeTruthy();
+  expect(screen.queryByText('A-10')).toBeNull();
+  expect(scroll.scrollTop).toBe(0);
+  click('新規クエリ');
+  click('Query 1', 'tab');
+  expect(
+    screen.getByRole('tab', { name: '結果 2（省略あり）' }).getAttribute('aria-selected'),
+  ).toBe('true');
+  click('結果 1', 'tab');
+  expect(screen.getByText('A-10')).toBeTruthy();
+  expect(scroll.scrollTop).toBe(75);
+  expect(scroll.scrollLeft).toBe(20);
+  expect(execute).toHaveBeenCalledTimes(1);
+});
+
+it('distinguishes empty table metadata and updates and exports only the selected result', async () => {
+  setup(vi.fn().mockResolvedValue(multiResult()));
+  await act(async () => click('実行'));
+  click('結果 3', 'tab');
+  expect(screen.getByRole('columnheader', { name: 'empty_column' })).toBeTruthy();
+  expect(screen.getByText('結果は0件です')).toBeTruthy();
+  click('更新 4', 'tab');
+  expect(screen.getByText('4 行に影響しました')).toBeTruthy();
+  expect((screen.getByRole('button', { name: 'エクスポート' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  click('結果 2（省略あり）', 'tab');
+  const create = vi.fn().mockReturnValue('blob:test');
+  vi.stubGlobal('URL', { createObjectURL: create, revokeObjectURL: vi.fn() });
+  let filename = '';
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    filename = this.download;
+  });
+  click('エクスポート');
+  expect(filename).toBe('Query 1-result-2.csv');
+  const text = await new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsText(create.mock.calls[0][0]);
+  });
+  expect(text).toContain('"b","extra"');
+  expect(text).toContain('B-99');
+  expect(text).not.toContain('A-0');
+  vi.unstubAllGlobals();
+});
+
+it('shows partial results with failure status and clears old results when re-executed', async () => {
+  const pending = deferred();
+  setup(
+    vi
+      .fn()
+      .mockResolvedValueOnce(multiResult('文5で失敗しました'))
+      .mockReturnValueOnce(pending.promise),
+  );
+  await act(async () => click('実行'));
+  expect(screen.getByRole('alert').textContent).toContain('実行全体は失敗');
+  expect(screen.getByText('実行エラー')).toBeTruthy();
+  expect(screen.getByText('A-0')).toBeTruthy();
+  click('実行');
+  expect(screen.queryByText('A-0')).toBeNull();
+  expect(screen.queryByRole('tab', { name: '結果 1' })).toBeNull();
+  await act(async () => pending.resolve(result));
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.getByText('A result')).toBeTruthy();
 });

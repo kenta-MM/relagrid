@@ -1,9 +1,22 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Copy, Download, Play, Plus, Save, Table2, X, Clock, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { QueryResult, Table } from '@/domain/database';
+import type { QueryResult, QueryResultSet, Table } from '@/domain/database';
 import { SqlEditor } from './SqlEditor';
 
+interface ResultView {
+  page: number;
+  size: number;
+  top: number;
+  left: number;
+}
+const defaultView: ResultView = { page: 0, size: 10, top: 0, left: 0 };
+function resultSets(result?: QueryResult): QueryResultSet[] {
+  return result ? (result.resultSets ?? [{ ...result, complete: true }]) : [];
+}
+function rowCount(result?: QueryResult) {
+  return resultSets(result).reduce((count, set) => count + set.rows.length, 0);
+}
 interface QueryTab {
   id: number;
   name: string;
@@ -17,8 +30,8 @@ interface QueryTab {
   connectionLabel: string;
   readOnly: boolean;
   resultTab: string;
-  page: number;
-  size: number;
+  resultIndex: number;
+  views: Record<string, ResultView>;
   executionId?: string;
   cancelling?: boolean;
 }
@@ -55,7 +68,15 @@ function download(name: string, text: string, type: string) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function ResultTable({ result, page, size }: { result: QueryResult; page: number; size: number }) {
+function ResultTable({
+  result,
+  page,
+  size,
+}: {
+  result: QueryResultSet;
+  page: number;
+  size: number;
+}) {
   return (
     <table className="data-table query-data">
       <thead>
@@ -78,7 +99,13 @@ function ResultTable({ result, page, size }: { result: QueryResult; page: number
       </tbody>
       {!result.rows.length && (
         <caption>
-          {result.columns.length ? '結果は0件です' : `${result.affectedRows} 行に影響しました`}
+          {result.columns.length
+            ? result.truncated
+              ? '表示上限により行データを省略しました'
+              : !result.complete
+                ? '取得済みの行はありません（未完了）'
+                : '結果は0件です'
+            : `${result.affectedRows} 行に影響しました`}
         </caption>
       )}
     </table>
@@ -112,8 +139,8 @@ export function QueryWorkspace({
       connectionLabel,
       readOnly,
       resultTab: 'result',
-      page: 0,
-      size: 10,
+      resultIndex: 0,
+      views: {},
     };
   }
   const [tabs, setTabs] = useState<QueryTab[]>(() => [createTab(1, initialSql())]);
@@ -130,9 +157,37 @@ export function QueryWorkspace({
   const [history, setHistory] = useState<Execution[]>([]);
   const [compare, setCompare] = useState(false);
   const current = tabs.find((tab) => tab.id === tabId)!;
-  const { resultTab, page, size } = current;
+  const { resultTab } = current;
+  const batch = resultTab === 'plan' ? current.plan : current.result;
+  const sets = resultSets(batch);
+  const resultIndex = resultTab === 'plan' ? 0 : current.resultIndex;
+  const viewKey = `${resultTab}:${resultIndex}`;
+  const view = current.views[viewKey] ?? defaultView;
+  const { page, size } = view;
+  const scroll = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (scroll.current) {
+      scroll.current.scrollTop = view.top;
+      scroll.current.scrollLeft = view.left;
+    }
+  }, [tabId, resultTab, resultIndex, active, batch, page, size]);
+  function updateView(changes: Partial<ResultView>) {
+    setTabs((tabs) =>
+      tabs.map((tab) =>
+        tab.id === tabId
+          ? {
+              ...tab,
+              views: {
+                ...tab.views,
+                [viewKey]: { ...(tab.views[viewKey] ?? defaultView), ...changes },
+              },
+            }
+          : tab,
+      ),
+    );
+  }
   function setSize(size: number) {
-    update(tabId, { size });
+    updateView({ size, page: 0, top: 0, left: 0 });
   }
   const canRun =
     !busy && !inFlight.current && current.connectionId === connectionId && !!current.sql.trim();
@@ -140,13 +195,16 @@ export function QueryWorkspace({
     update(tabId, { resultTab });
   }
   function setPage(page: number) {
-    update(tabId, { page });
+    updateView({ page, top: 0, left: 0 });
   }
-  const result = resultTab === 'plan' ? current.plan : current.result;
-  const latest = history.find(
-    (item) =>
-      item.tabId === tabId && (resultTab === 'messages' || item.explain === (resultTab === 'plan')),
-  );
+  const result = resultTab === 'messages' ? undefined : sets[resultIndex];
+  const latest = current.executionId
+    ? undefined
+    : history.find(
+        (item) =>
+          item.tabId === tabId &&
+          (resultTab === 'messages' || item.explain === (resultTab === 'plan')),
+      );
   const pageCount = Math.max(1, Math.ceil((result?.rows.length ?? 0) / size));
   function update(id: number, changes: Partial<QueryTab>) {
     setTabs((tabs) => tabs.map((tab) => (tab.id === id ? { ...tab, ...changes } : tab)));
@@ -175,13 +233,22 @@ export function QueryWorkspace({
       executionId,
       cancelling: false,
       resultTab: explain ? 'plan' : 'result',
-      page: 0,
+      resultIndex: explain ? current.resultIndex : 0,
+      views: Object.fromEntries(
+        Object.entries(current.views).filter(
+          ([key]) => !key.startsWith(explain ? 'plan:' : 'result:'),
+        ),
+      ),
       error: undefined,
       ...(explain ? { plan: undefined } : { result: undefined }),
     });
     try {
       const result = await execute(sql, explain, executionId);
-      update(id, { [explain ? 'plan' : 'result']: result, lastSql: sql });
+      update(id, {
+        [explain ? 'plan' : 'result']: result,
+        lastSql: sql,
+        error: result.error ?? undefined,
+      });
       setHistory((items) =>
         [
           {
@@ -190,6 +257,7 @@ export function QueryWorkspace({
             sql,
             time: new Date().toLocaleTimeString('ja-JP'),
             result,
+            error: result.error ?? undefined,
             explain,
             connectionId: current.connectionId,
             connectionLabel: current.connectionLabel,
@@ -200,7 +268,7 @@ export function QueryWorkspace({
       );
     } catch (error) {
       const message = String(error instanceof Error ? error.message : error);
-      update(id, { error: message, resultTab: 'messages', page: 0 });
+      update(id, { error: message, resultTab: 'messages' });
       setHistory((items) =>
         [
           {
@@ -246,7 +314,7 @@ export function QueryWorkspace({
       return `"${text.replaceAll('"', '""')}"`;
     };
     download(
-      `${current.name}.csv`,
+      `${current.name}${sets.length > 1 ? `-result-${resultIndex + 1}` : ''}.csv`,
       '\uFEFF' +
         [result.columns, ...result.rows].map((row) => row.map(cell).join(',')).join('\r\n'),
       'text/csv;charset=utf-8',
@@ -379,7 +447,6 @@ export function QueryWorkspace({
                   className={resultTab === id ? 'active' : ''}
                   onClick={() => {
                     setResultTab(id);
-                    setPage(0);
                   }}
                 >
                   {title}
@@ -391,20 +458,58 @@ export function QueryWorkspace({
                 再取得
               </Button>
             )}
-            <Button variant="ghost" size="sm" disabled={!result} onClick={exportCsv}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!result?.columns.length}
+              onClick={exportCsv}
+            >
               <Download size={14} />
               エクスポート
             </Button>
           </div>
-          <div className="query-result-scroll">
+          {resultTab === 'result' && sets.length > 1 && (
+            <div className="result-set-tabs" role="tablist" aria-label="Result Set">
+              {sets.map((set, index) => (
+                <button
+                  key={index}
+                  role="tab"
+                  aria-selected={resultIndex === index}
+                  onClick={() => update(tabId, { resultIndex: index })}
+                >
+                  {set.columns.length ? '結果' : '更新'} {index + 1}
+                  {!set.complete ? '（未完了）' : set.truncated ? '（省略あり）' : ''}
+                </button>
+              ))}
+            </div>
+          )}
+          {(current.error || batch?.error) && resultTab !== 'messages' && (
+            <div className="query-message" role="alert">
+              実行全体は失敗しました。{batch?.error || current.error}
+            </div>
+          )}
+          <div
+            className="query-result-scroll"
+            ref={scroll}
+            onScroll={(event) =>
+              updateView({
+                top: event.currentTarget.scrollTop,
+                left: event.currentTarget.scrollLeft,
+              })
+            }
+          >
             {resultTab === 'messages' ? (
               <div className="query-message" role={current.error ? 'alert' : 'status'}>
                 {current.error ||
                   (latest?.result
-                    ? `${latest.explain ? '実行計画を取得' : '実行完了'} · ${latest.result.elapsedMs} ms · ${latest.result.rows.length} 行取得 · ${latest.result.affectedRows} 行に影響`
-                    : 'SQLを入力して実行してください。')}
+                    ? `${latest.explain ? '実行計画を取得' : '実行完了'} · ${latest.result.elapsedMs} ms · ${rowCount(latest.result)} 行取得 · ${latest.result.affectedRows} 行に影響`
+                    : current.executionId
+                      ? '実行中です。'
+                      : 'SQLを入力して実行してください。')}
                 {latest?.result?.truncated && (
-                  <p>結果は上限（1,000行・各値5,000文字・合計約5MB）で省略されています。</p>
+                  <p>
+                    結果は上限（結果ごとに1,000行・各値5,000文字・実行全体で約5MB）で省略されています。
+                  </p>
                 )}
               </div>
             ) : result ? (
@@ -443,7 +548,7 @@ export function QueryWorkspace({
             </Button>
             <span className="result-count">
               {result
-                ? `${result.rows.length} 行 · ${result.elapsedMs} ms${result.truncated ? '（上限で省略）' : ''}`
+                ? `${result.rows.length} 行 · 実行全体 ${batch?.elapsedMs} ms${result.truncated ? '（上限で省略）' : ''}${!result.complete ? '（取得未完了）' : ''}`
                 : '未実行'}
             </span>
             <select
@@ -509,7 +614,7 @@ export function QueryWorkspace({
             </div>
             <div>
               <dt>返却行数</dt>
-              <dd>{latest?.result ? `${latest.result.rows.length} 行` : '—'}</dd>
+              <dd>{latest?.result ? `${rowCount(latest.result)} 行` : '—'}</dd>
             </div>
             <div>
               <dt>影響行数</dt>
@@ -548,7 +653,7 @@ export function QueryWorkspace({
             >
               <span className={item.error ? 'execution-error' : 'execution-success'}>●</span>
               <span>{item.error ? 'エラー' : `${item.result!.elapsedMs} ms`}</span>
-              <span>{item.explain ? 'EXPLAIN' : `${item.result?.rows.length ?? 0} 行`}</span>
+              <span>{item.explain ? 'EXPLAIN' : `${rowCount(item.result)} 行`}</span>
               <time>{item.time}</time>
             </button>
           ))}
