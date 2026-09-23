@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { Copy, Download, Play, Plus, Save, Table2, X, Clock, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { QueryResult, Table } from '@/domain/database';
+import { SqlEditor } from './SqlEditor';
 
 interface QueryTab {
   id: number;
@@ -80,7 +81,6 @@ export function QueryWorkspace({
 }: Props) {
   const nextId = useRef(2);
   const inFlight = useRef(false);
-  const lineNumbers = useRef<HTMLDivElement>(null);
   function initialSql() {
     const table = tables.find((t) => t.id === selected) ?? tables[0];
     return table ? `SELECT * FROM \`${table.name.replaceAll('`', '``')}\` LIMIT 100;` : 'SELECT 1;';
@@ -244,31 +244,15 @@ export function QueryWorkspace({
               {mode === 'demo' ? 'DEMO · サンプルSELECTのみ' : 'MySQL'} ·{' '}
               {readOnly ? '読み取り専用' : '読み書き可能'}
             </span>
-            <span>Ctrl / ⌘ + Enter で実行</span>
+            <span>Tab で補完 · Ctrl / ⌘ + Space で候補 · Ctrl / ⌘ + Enter で実行</span>
           </div>
-          <div className="sql-code-area">
-            <div className="line-numbers" aria-hidden="true" ref={lineNumbers}>
-              {current.sql.split('\n').map((_, i) => (
-                <div key={i}>{i + 1}</div>
-              ))}
-            </div>
-            <textarea
-              aria-label="SQLクエリ"
-              onScroll={(event) => {
-                if (lineNumbers.current)
-                  lineNumbers.current.scrollTop = event.currentTarget.scrollTop;
-              }}
-              spellCheck={false}
-              value={current.sql}
-              onChange={(event) => update(tabId, { sql: event.target.value })}
-              onKeyDown={(event) => {
-                if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-                  event.preventDefault();
-                  void run();
-                }
-              }}
-            />
-          </div>
+          <SqlEditor
+            key={tabId}
+            value={current.sql}
+            tables={tables}
+            onChange={(sql) => update(tabId, { sql })}
+            onRun={() => void run()}
+          />
           {compare && current.lastSql && (
             <div className="query-comparison">
               <span>前回実行したSQL</span>

@@ -101,40 +101,10 @@
   color: #91a0ba;
   gap: 8px;
 }
-.sql-code-area {
+.sql-code-editor {
   flex: 1;
   min-height: 100px;
-  overflow: auto;
-  display: flex;
-  padding: 5px 14px 14px;
-}
-.line-numbers {
-  color: #677893;
-  text-align: right;
-  width: 28px;
-  flex-shrink: 0;
-  padding-right: 14px;
-  font:
-    13px/1.8 Consolas,
-    monospace;
   overflow: hidden;
-}
-.sql-code-area textarea {
-  flex: 1;
-  min-width: 0;
-  resize: none;
-  border: 0;
-  background: transparent;
-  color: #ddc9ff;
-  font:
-    13px/1.8 Consolas,
-    monospace;
-  outline: none;
-  white-space: pre;
-  tab-size: 2;
-}
-.sql-code-area textarea:focus-visible {
-  box-shadow: inset 2px 0 #805ac7;
 }
 .query-comparison {
   max-height: 100px;

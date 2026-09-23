@@ -21,7 +21,7 @@ test('separates SQL workspace, executes and preserves tabs across screen changes
   await expect(page.getByRole('tab', { name: 'アクティビティ', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'クエリ詳細' })).toHaveCount(0);
   await page.getByRole('button', { name: 'SQL', exact: true }).click();
-  await expect(page.getByRole('textbox', { name: 'SQLクエリ' })).toHaveValue(
+  await expect(page.getByRole('textbox', { name: 'SQLクエリ' })).toHaveText(
     'SELECT * FROM Product LIMIT 2;',
   );
   await page.getByRole('tab', { name: 'Query 1', exact: true }).click();
@@ -49,4 +49,52 @@ test('connection mode defaults to read only and can be changed', async ({ page }
   await expect(option).toBeChecked();
   await option.uncheck();
   await expect(option).not.toBeChecked();
+});
+
+test('SQL editor completes types and scoped columns with Tab and marks mistyped types', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'SQL', exact: true }).click();
+  const editor = page.getByRole('textbox', { name: 'SQLクエリ' });
+  await editor.fill('SELECT CAST(1 AS ');
+  await editor.pressSequentially('VARC', { delay: 80 });
+  await expect(page.getByRole('option', { name: /VARCHAR/ }).first()).toBeVisible();
+  await editor.press('Tab');
+  await expect(editor).toHaveText('SELECT CAST(1 AS VARCHAR');
+
+  await editor.fill('SELECT  FROM Customer c');
+  await editor.press('Control+Home');
+  for (let i = 0; i < 7; i++) await editor.press('ArrowRight');
+  await editor.pressSequentially('c.', { delay: 80 });
+  await expect(page.getByRole('option', { name: /customer_id/ })).toBeVisible();
+  await expect(page.getByRole('option', { name: /email/ })).toBeVisible();
+  await editor.pressSequentially('ema', { delay: 80 });
+  await expect(page.getByRole('option', { name: /email/ })).toBeVisible();
+  await editor.press('Tab');
+  await expect(editor).toHaveText('SELECT c.email FROM Customer c');
+
+  await editor.fill(
+    'SELECT  FROM (SELECT customer_id AS id, COUNT(*) AS total FROM Customer GROUP BY customer_id) summary',
+  );
+  await editor.press('Control+Home');
+  for (let i = 0; i < 7; i++) await editor.press('ArrowRight');
+  await editor.pressSequentially('summary.', { delay: 60 });
+  await expect(page.getByRole('option', { name: /total/ })).toBeVisible();
+  await expect(page.getByRole('option', { name: /email/ })).toHaveCount(0);
+  await editor.press('ArrowDown');
+  await editor.press('Tab');
+  await expect(editor).toContainText('summary.total');
+
+  await editor.fill('SELECT CAST(1 AS INTT)');
+  await expect(page.locator('.cm-lintRange-error')).toHaveText('INTT');
+  await page.screenshot({ path: 'test-results/query-type-error.png', fullPage: true });
+  await editor.fill('SELECT CAST(1 AS SIGNED)');
+  await expect(page.locator('.cm-lintRange-error')).toHaveCount(0);
+  await editor.fill('SELECT CAST(1 AS ');
+  await editor.pressSequentially('DEC', { delay: 80 });
+  await expect(page.getByRole('listbox')).toBeVisible();
+  await page.screenshot({ path: 'test-results/query-completion.png', fullPage: true });
+  await editor.press('Escape');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
 });
