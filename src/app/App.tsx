@@ -46,6 +46,7 @@ export function App() {
     </nav>
   );
   const table = explorer.snapshot.tables.find((t) => t.id === explorer.selected);
+  const connection = explorer.connections.find((entry) => entry.id === explorer.activeConnectionId);
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -181,7 +182,12 @@ export function App() {
           />
         </div>
         <QueryWorkspace
-          key={explorer.sessionId}
+          connectionId={explorer.activeConnectionId ?? 0}
+          connectionLabel={
+            explorer.mode === 'demo'
+              ? 'デモ'
+              : `${explorer.database} (${connection?.host}:${connection?.port})`
+          }
           active={screen === 'sql'}
           navigation={navigation}
           tables={explorer.snapshot.tables}
@@ -190,6 +196,7 @@ export function App() {
           busy={explorer.busy}
           mode={explorer.mode}
           execute={explorer.execute}
+          cancel={explorer.cancel}
         />
       </div>
       <footer className="status-bar">

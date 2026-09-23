@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Copy, Download, Play, Plus, Save, Table2, X, Clock, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { QueryResult, Table } from '@/domain/database';
@@ -12,15 +12,27 @@ interface QueryTab {
   plan?: QueryResult;
   error?: string;
   lastSql?: string;
+  savedSql: string;
+  connectionId: number;
+  connectionLabel: string;
+  readOnly: boolean;
+  resultTab: string;
+  page: number;
+  size: number;
+  executionId?: string;
+  cancelling?: boolean;
 }
 interface Execution {
-  id: number;
+  id: string;
   tabId: number;
   sql: string;
   time: string;
   result?: QueryResult;
   error?: string;
   explain: boolean;
+  connectionId: number;
+  connectionLabel: string;
+  readOnly: boolean;
 }
 interface Props {
   active: boolean;
@@ -30,7 +42,10 @@ interface Props {
   readOnly: boolean;
   busy: boolean;
   mode: string;
-  execute(sql: string, explain?: boolean): Promise<QueryResult>;
+  connectionId: number;
+  connectionLabel: string;
+  execute(sql: string, explain?: boolean, executionId?: string): Promise<QueryResult>;
+  cancel(executionId: string): Promise<void>;
 }
 function download(name: string, text: string, type: string) {
   const url = URL.createObjectURL(new Blob([text], { type }));
@@ -76,8 +91,10 @@ export function QueryWorkspace({
   selected,
   readOnly,
   busy,
-  mode,
+  connectionId,
+  connectionLabel,
   execute,
+  cancel,
 }: Props) {
   const nextId = useRef(2);
   const inFlight = useRef(false);
@@ -85,17 +102,46 @@ export function QueryWorkspace({
     const table = tables.find((t) => t.id === selected) ?? tables[0];
     return table ? `SELECT * FROM \`${table.name.replaceAll('`', '``')}\` LIMIT 100;` : 'SELECT 1;';
   }
-  const [tabs, setTabs] = useState<QueryTab[]>(() => [
-    { id: 1, name: 'Query 1', sql: initialSql() },
-  ]);
+  function createTab(id: number, sql: string): QueryTab {
+    return {
+      id,
+      name: `Query ${id}`,
+      sql,
+      savedSql: '',
+      connectionId,
+      connectionLabel,
+      readOnly,
+      resultTab: 'result',
+      page: 0,
+      size: 10,
+    };
+  }
+  const [tabs, setTabs] = useState<QueryTab[]>(() => [createTab(1, initialSql())]);
   const [tabId, setTabId] = useState(1);
-  const [resultTab, setResultTab] = useState('result');
+  const previousConnection = useRef(connectionId);
+  useEffect(() => {
+    if (previousConnection.current === connectionId) return;
+    previousConnection.current = connectionId;
+    const existing = tabs.find((tab) => tab.connectionId === connectionId);
+    if (existing) setTabId(existing.id);
+    else add();
+  }, [connectionId]);
   const [inspectorTab, setInspectorTab] = useState('summary');
   const [history, setHistory] = useState<Execution[]>([]);
   const [compare, setCompare] = useState(false);
-  const [page, setPage] = useState(0);
-  const [size, setSize] = useState(10);
   const current = tabs.find((tab) => tab.id === tabId)!;
+  const { resultTab, page, size } = current;
+  function setSize(size: number) {
+    update(tabId, { size });
+  }
+  const canRun =
+    !busy && !inFlight.current && current.connectionId === connectionId && !!current.sql.trim();
+  function setResultTab(resultTab: string) {
+    update(tabId, { resultTab });
+  }
+  function setPage(page: number) {
+    update(tabId, { page });
+  }
   const result = resultTab === 'plan' ? current.plan : current.result;
   const latest = history.find(
     (item) =>
@@ -105,55 +151,91 @@ export function QueryWorkspace({
   function update(id: number, changes: Partial<QueryTab>) {
     setTabs((tabs) => tabs.map((tab) => (tab.id === id ? { ...tab, ...changes } : tab)));
   }
-  function add(sql = initialSql()) {
+  function add(
+    sql = initialSql(),
+    owner?: Pick<QueryTab, 'connectionId' | 'connectionLabel' | 'readOnly'>,
+  ) {
     const id = nextId.current++;
-    setTabs((tabs) => [...tabs, { id, name: `Query ${id}`, sql }]);
+    const tab = createTab(id, sql);
+    if (owner) {
+      tab.connectionId = owner.connectionId;
+      tab.connectionLabel = owner.connectionLabel;
+      tab.readOnly = owner.readOnly;
+    }
+    setTabs((tabs) => [...tabs, tab]);
     setTabId(id);
-    setPage(0);
   }
   async function run(explain = false) {
-    if (inFlight.current || busy || !current.sql.trim()) return;
+    if (!canRun || inFlight.current) return;
     inFlight.current = true;
     const id = current.id,
       sql = current.sql;
-    setResultTab(explain ? 'plan' : 'result');
-    setPage(0);
-    update(id, { error: undefined, ...(explain ? { plan: undefined } : { result: undefined }) });
+    const executionId = crypto.randomUUID();
+    update(id, {
+      executionId,
+      cancelling: false,
+      resultTab: explain ? 'plan' : 'result',
+      page: 0,
+      error: undefined,
+      ...(explain ? { plan: undefined } : { result: undefined }),
+    });
     try {
-      const result = await execute(sql, explain);
+      const result = await execute(sql, explain, executionId);
       update(id, { [explain ? 'plan' : 'result']: result, lastSql: sql });
       setHistory((items) =>
         [
           {
-            id: Date.now(),
+            id: executionId,
             tabId: id,
             sql,
             time: new Date().toLocaleTimeString('ja-JP'),
             result,
             explain,
+            connectionId: current.connectionId,
+            connectionLabel: current.connectionLabel,
+            readOnly: current.readOnly,
           },
           ...items,
         ].slice(0, 50),
       );
     } catch (error) {
       const message = String(error instanceof Error ? error.message : error);
-      update(id, { error: message });
-      setResultTab('messages');
+      update(id, { error: message, resultTab: 'messages', page: 0 });
       setHistory((items) =>
         [
           {
-            id: Date.now(),
+            id: executionId,
             tabId: id,
             sql,
             time: new Date().toLocaleTimeString('ja-JP'),
             error: message,
             explain,
+            connectionId: current.connectionId,
+            connectionLabel: current.connectionLabel,
+            readOnly: current.readOnly,
           },
           ...items,
         ].slice(0, 50),
       );
     } finally {
       inFlight.current = false;
+      update(id, { executionId: undefined, cancelling: false });
+    }
+  }
+  async function stop() {
+    const { id, executionId } = current;
+    if (!executionId || current.cancelling) return;
+    update(id, { cancelling: true });
+    try {
+      await cancel(executionId);
+    } catch (error) {
+      setTabs((tabs) =>
+        tabs.map((tab) =>
+          tab.id === id && tab.executionId === executionId
+            ? { ...tab, cancelling: false, error: String(error), resultTab: 'messages' }
+            : tab,
+        ),
+      );
     }
   }
   function exportCsv() {
@@ -191,23 +273,31 @@ export function QueryWorkspace({
                 <div className={`query-tab ${tab.id === tabId ? 'active' : ''}`} key={tab.id}>
                   <button
                     role="tab"
+                    aria-label={tab.name}
+                    title={`${tab.connectionLabel}${tab.sql !== tab.savedSql ? ' · 未保存' : ''}`}
                     aria-selected={tab.id === tabId}
                     onClick={() => {
                       setTabId(tab.id);
-                      setPage(0);
                     }}
                   >
                     <Table2 size={14} />
                     {tab.name}
+                    {tab.sql !== tab.savedSql && <span aria-hidden="true"> *</span>}
+                    {tab.executionId && <span>（実行中）</span>}
                   </button>
                   {tabs.length > 1 && (
                     <button
                       aria-label={`${tab.name}を閉じる`}
-                      disabled={busy}
+                      disabled={!!tab.executionId}
                       onClick={() => {
-                        setTabs(tabs.filter((t) => t.id !== tab.id));
+                        if (
+                          tab.executionId ||
+                          (tab.sql !== tab.savedSql &&
+                            !window.confirm(`${tab.name}の未保存SQLを破棄しますか？`))
+                        )
+                          return;
+                        setTabs((tabs) => tabs.filter((t) => t.id !== tab.id));
                         if (tabId === tab.id) setTabId(tabs.find((t) => t.id !== tab.id)!.id);
-                        setPage(0);
                       }}
                     >
                       <X size={12} />
@@ -220,7 +310,7 @@ export function QueryWorkspace({
               </Button>
             </div>
             <div className="query-actions">
-              <Button variant="outline" size="sm" onClick={() => add(current.sql)}>
+              <Button variant="outline" size="sm" onClick={() => add(current.sql, current)}>
                 <Copy size={14} />
                 複製
               </Button>
@@ -233,23 +323,37 @@ export function QueryWorkspace({
               >
                 比較
               </Button>
-              <Button size="sm" disabled={busy || !current.sql.trim()} onClick={() => void run()}>
+              <Button size="sm" disabled={!canRun} onClick={() => void run()}>
                 <Play size={14} />
-                {busy ? '実行中…' : '実行'}
+                {current.executionId ? '実行中…' : '実行'}
               </Button>
+              {current.executionId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={current.cancelling}
+                  onClick={() => void stop()}
+                >
+                  {current.cancelling ? '中断待ち…' : '中断'}
+                </Button>
+              )}
             </div>
           </div>
           <div className="editor-meta">
             <span>
-              {mode === 'demo' ? 'DEMO · サンプルSELECTのみ' : 'MySQL'} ·{' '}
-              {readOnly ? '読み取り専用' : '読み書き可能'}
+              {current.connectionLabel} ·{' '}
+              {current.connectionId === 0 ? 'DEMO · サンプルSELECTのみ' : 'MySQL'} ·{' '}
+              {current.readOnly ? '読み取り専用' : '読み書き可能'}
+              {current.connectionId !== connectionId &&
+                ' · 実行するにはサイドバーでこの接続を選択してください'}
+              {busy && !current.executionId && ' · 他の操作が完了するまで実行できません'}
             </span>
             <span>Tab で補完 · Ctrl / ⌘ + Space で候補 · Ctrl / ⌘ + Enter で実行</span>
           </div>
           <SqlEditor
             key={tabId}
             value={current.sql}
-            tables={tables}
+            tables={current.connectionId === connectionId ? tables : []}
             onChange={(sql) => update(tabId, { sql })}
             onRun={() => void run()}
           />
@@ -283,7 +387,7 @@ export function QueryWorkspace({
               ))}
             </div>
             {resultTab === 'plan' && current.plan && (
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void run(true)}>
+              <Button variant="ghost" size="sm" disabled={!canRun} onClick={() => void run(true)}>
                 再取得
               </Button>
             )}
@@ -308,11 +412,7 @@ export function QueryWorkspace({
             ) : (
               <div className="preview-empty">
                 {resultTab === 'plan' ? (
-                  <Button
-                    variant="outline"
-                    disabled={busy || !current.sql.trim()}
-                    onClick={() => void run(true)}
-                  >
+                  <Button variant="outline" disabled={!canRun} onClick={() => void run(true)}>
                     実行計画を取得（EXPLAIN）
                   </Button>
                 ) : (
@@ -417,11 +517,21 @@ export function QueryWorkspace({
             </div>
             <div>
               <dt>接続モード</dt>
-              <dd>{readOnly ? '読み取り専用' : '読み書き可能'}</dd>
+              <dd>
+                {current.connectionLabel} · {current.readOnly ? '読み取り専用' : '読み書き可能'}
+              </dd>
             </div>
             <div>
               <dt>状態</dt>
-              <dd>{latest?.error ? '実行エラー' : latest ? '成功' : '未実行'}</dd>
+              <dd>
+                {current.executionId
+                  ? '実行中'
+                  : latest?.error
+                    ? '実行エラー'
+                    : latest
+                      ? '成功'
+                      : '未実行'}
+              </dd>
             </div>
           </dl>
         )}
@@ -431,7 +541,11 @@ export function QueryWorkspace({
         </div>
         <div className="query-history">
           {(inspectorTab === 'history' ? history : history.slice(0, 3)).map((item) => (
-            <button key={item.id} title={item.sql} onClick={() => add(item.sql)}>
+            <button
+              key={item.id}
+              title={`${item.connectionLabel}: ${item.sql}`}
+              onClick={() => add(item.sql, item)}
+            >
               <span className={item.error ? 'execution-error' : 'execution-success'}>●</span>
               <span>{item.error ? 'エラー' : `${item.result!.elapsedMs} ms`}</span>
               <span>{item.explain ? 'EXPLAIN' : `${item.result?.rows.length ?? 0} 行`}</span>
@@ -442,7 +556,10 @@ export function QueryWorkspace({
         </div>
         <div className="query-inspector-actions">
           <Button
-            onClick={() => download(`${current.name}.sql`, current.sql, 'text/plain;charset=utf-8')}
+            onClick={() => {
+              download(`${current.name}.sql`, current.sql, 'text/plain;charset=utf-8');
+              update(tabId, { savedSql: current.sql });
+            }}
           >
             <Save size={16} />
             保存する

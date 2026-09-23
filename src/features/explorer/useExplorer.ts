@@ -210,10 +210,10 @@ export function useExplorer() {
       if (request === revision.current) setPreviewBusy(false);
     }
   }
-  async function execute(sql: string, explain = false) {
+  async function execute(sql: string, explain = false, executionId?: string) {
     if (!beginOperation()) throw new Error('実行中の操作が完了するまでお待ちください。');
     try {
-      return await gateway.current.execute(sql, explain);
+      return await gateway.current.execute(sql, explain, executionId);
     } finally {
       // A writable statement may have changed data even if its response failed.
       if (!readOnly && !explain) {
@@ -224,6 +224,9 @@ export function useExplorer() {
     }
   }
   return {
+    cancel: async (executionId: string) => {
+      await gateway.current.cancel?.(executionId);
+    },
     demoGroup,
     connectionGroups,
     addConnectionGroup,

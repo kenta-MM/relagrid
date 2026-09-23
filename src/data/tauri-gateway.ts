@@ -9,5 +9,7 @@ export const mysqlGateway: DatabaseGateway = {
   refresh: () => invoke<SchemaSnapshot>('refresh_schema'),
   preview: (table) => invoke<Preview>('preview_table', { tableId: table.id }),
   disconnect: () => invoke<void>('disconnect_database'),
-  execute: (sql, explain = false) => invoke<QueryResult>('execute_query', { sql, explain }),
+  execute: (sql, explain = false, executionId) =>
+    invoke<QueryResult>('execute_query', { sql, explain, executionId }),
+  cancel: (executionId) => invoke<void>('cancel_query', { executionId }),
 };
