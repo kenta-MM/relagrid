@@ -3,6 +3,7 @@ import { Copy, Download, Play, Plus, Save, Table2, X, Clock, Database } from 'lu
 import { Button } from '@/components/ui/button';
 import type { QueryResult, QueryResultSet, Table } from '@/domain/database';
 import { SqlEditor } from './SqlEditor';
+import { exportGenericCsv } from '@/features/csv/csv';
 import { claimShortcut, shortcutTarget } from '@/lib/shortcuts';
 
 interface ResultView {
@@ -363,15 +364,9 @@ export function QueryWorkspace({
   }
   function exportCsv() {
     if (!result) return;
-    const cell = (value: string | null) => {
-      let text = value ?? '';
-      if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-      return `"${text.replaceAll('"', '""')}"`;
-    };
     download(
       `${current.name}${sets.length > 1 ? `-result-${resultIndex + 1}` : ''}.csv`,
-      '\uFEFF' +
-        [result.columns, ...result.rows].map((row) => row.map(cell).join(',')).join('\r\n'),
+      exportGenericCsv(result),
       'text/csv;charset=utf-8',
     );
   }
