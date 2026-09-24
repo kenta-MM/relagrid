@@ -6,25 +6,105 @@ import { QueryWorkspace } from './QueryWorkspace';
 import type { QueryResult, QueryResultSet } from '@/domain/database';
 
 vi.mock('./SqlEditor', () => ({
-  SqlEditor: ({
-    value,
-    onChange,
-    onRun,
-  }: {
-    value: string;
-    onChange(value: string): void;
-    onRun(): void;
-  }) =>
-    createElement('textarea', {
-      'aria-label': 'SQLクエリ',
-      value,
-      onChange: (event: { target: { value: string } }) => onChange(event.target.value),
-      onKeyDown: () => onRun(),
-    }),
+  SqlEditor: ({ value, onChange }: { value: string; onChange(value: string): void }) =>
+    createElement(
+      'div',
+      { className: 'sql-code-editor' },
+      createElement('textarea', {
+        'aria-label': 'SQLクエリ',
+        value,
+        onChange: (event: { target: { value: string } }) => onChange(event.target.value),
+      }),
+    ),
 }));
 afterEach(() => {
   cleanup();
+  document.body.replaceChildren();
   vi.restoreAllMocks();
+});
+
+it('shares tab commands, confirmation and disabled execution with keyboard shortcuts', async () => {
+  const pending = deferred();
+  const { props } = setup(vi.fn().mockReturnValue(pending.promise));
+  const key = (key: string, extra = {}) =>
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), { key, ...extra });
+  key('t', { ctrlKey: true });
+  expect(screen.getByRole('tab', { name: 'Query 2' }).getAttribute('aria-selected')).toBe('true');
+  key('Tab', { ctrlKey: true, shiftKey: true });
+  expect(screen.getByRole('tab', { name: 'Query 1' }).getAttribute('aria-selected')).toBe('true');
+  key('Tab', { ctrlKey: true });
+  key('F5');
+  key('Enter', { ctrlKey: true });
+  key('F5', { repeat: true });
+  expect(props.execute).toHaveBeenCalledTimes(1);
+  key('w', { ctrlKey: true });
+  expect(screen.getByRole('tab', { name: 'Query 2' })).toBeTruthy();
+  await act(async () => key('F5', { shiftKey: true }));
+  expect(props.cancel).toHaveBeenCalledWith(props.execute.mock.calls[0][2]);
+  await act(async () => pending.reject(new Error('中断')));
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  key('w', { ctrlKey: true });
+  expect(confirm).toHaveBeenCalledTimes(1);
+  confirm.mockReturnValue(true);
+  key('w', { ctrlKey: true });
+  expect(screen.queryByRole('tab', { name: 'Query 2' })).toBeNull();
+});
+
+it('ignores composition, dialogs, other fields, repeats and hidden workspace', () => {
+  const { props, rerender } = setup();
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+    key: 'F5',
+    isComposing: true,
+  });
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+    key: 'F5',
+    keyCode: 229,
+  });
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+    key: 't',
+    ctrlKey: true,
+    repeat: true,
+  });
+  const input = document.createElement('input');
+  document.body.append(input);
+  fireEvent.keyDown(input, { key: 'F5' });
+  const dialog = document.createElement('div');
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('data-state', 'open');
+  document.body.append(dialog);
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), { key: 'F5' });
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+    key: 't',
+    ctrlKey: true,
+  });
+  dialog.remove();
+  input.remove();
+  expect(screen.queryByRole('tab', { name: 'Query 2' })).toBeNull();
+  rerender(createElement(QueryWorkspace, { ...props, active: false }));
+  fireEvent.keyDown(document.body, { key: 'F5' });
+  expect(props.execute).not.toHaveBeenCalled();
+});
+
+it('switches results only when focused inside the results area', async () => {
+  setup(vi.fn().mockResolvedValue(multiResult()));
+  await act(async () => click('実行'));
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+    key: 'ArrowRight',
+    altKey: true,
+  });
+  expect(screen.getByRole('tab', { name: '結果 1' }).getAttribute('aria-selected')).toBe('true');
+  fireEvent.keyDown(screen.getByRole('region', { name: 'クエリ実行結果' }), {
+    key: 'ArrowRight',
+    altKey: true,
+  });
+  expect(
+    screen.getByRole('tab', { name: '結果 2（省略あり）' }).getAttribute('aria-selected'),
+  ).toBe('true');
+  fireEvent.keyDown(screen.getByRole('region', { name: 'クエリ実行結果' }), {
+    key: 'ArrowLeft',
+    altKey: true,
+  });
+  expect(screen.getByRole('tab', { name: '結果 1' }).getAttribute('aria-selected')).toBe('true');
 });
 const result: QueryResult = {
   columns: ['value'],
@@ -68,9 +148,15 @@ it('routes a delayed result to its owner and blocks duplicate execution before b
   const execute = vi.fn().mockReturnValue(pending.promise);
   setup(execute);
   click('実行');
-  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+    key: 'Enter',
+    ctrlKey: true,
+  });
   click('新規クエリ');
-  fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+    key: 'Enter',
+    ctrlKey: true,
+  });
   expect(execute).toHaveBeenCalledTimes(1);
   expect(
     (screen.getByRole('button', { name: 'Query 1を閉じる' }) as HTMLButtonElement).disabled,
@@ -108,7 +194,7 @@ it('retains SQL and results across connections and refuses execution on a differ
   click('Query 1', 'tab');
   expect(screen.getByText('A result')).toBeTruthy();
   expect((screen.getByRole('button', { name: '実行' }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.keyDown(screen.getByRole('textbox'));
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), { key: 'F5' });
   expect(props.execute).toHaveBeenCalledTimes(1);
   rerender(createElement(QueryWorkspace, props));
   expect((screen.getByRole('button', { name: '実行' }) as HTMLButtonElement).disabled).toBe(false);
@@ -139,7 +225,9 @@ it('captures SQL at start while allowing edits and keeps pagination per tab', as
   const execute = vi.fn().mockReturnValue(pending.promise);
   setup(execute);
   click('実行');
-  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'SELECT 2;' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+    target: { value: 'SELECT 2;' },
+  });
   await act(async () =>
     pending.resolve({ ...result, rows: Array.from({ length: 30 }, (_, i) => [String(i)]) }),
   );
@@ -152,7 +240,9 @@ it('captures SQL at start while allowing edits and keeps pagination per tab', as
   fireEvent.change(screen.getByRole('combobox'), { target: { value: '100' } });
   click('Query 1', 'tab');
   expect(screen.getByText('2 / 3')).toBeTruthy();
-  expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('SELECT 2;');
+  expect((screen.getByRole('textbox', { name: 'SQLクエリ' }) as HTMLTextAreaElement).value).toBe(
+    'SELECT 2;',
+  );
 });
 
 it('duplicates SQL without copying execution/results and retains the source connection', async () => {

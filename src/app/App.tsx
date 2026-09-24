@@ -8,6 +8,7 @@ import { TableDetails } from '@/features/explorer/TableDetails';
 import { BottomPanel } from '@/features/explorer/BottomPanel';
 import { useExplorer } from '@/features/explorer/useExplorer';
 import { QueryWorkspace } from '@/features/query/QueryWorkspace';
+import { claimShortcut, shortcutTarget } from '@/lib/shortcuts';
 export function App() {
   const searchInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -15,6 +16,9 @@ export function App() {
       const target = event.target as HTMLElement | null;
       if (
         event.key !== '/' ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        event.repeat ||
         event.ctrlKey ||
         event.metaKey ||
         event.altKey ||
@@ -33,8 +37,43 @@ export function App() {
   const [relatedOnly, setRelatedOnly] = useState(false);
   const [tab, setTab] = useState('activity');
   const [screen, setScreen] = useState<'relations' | 'sql'>('relations');
+  const modeFocus = useRef(false);
+  useEffect(() => {
+    function switchMode(event: KeyboardEvent) {
+      if (
+        !shortcutTarget(event) ||
+        !(event.ctrlKey || event.metaKey) ||
+        !event.shiftKey ||
+        event.altKey ||
+        event.key.toLowerCase() !== 'm'
+      )
+        return;
+      claimShortcut(event, () => {
+        modeFocus.current = true;
+        setScreen((screen) => (screen === 'sql' ? 'relations' : 'sql'));
+      });
+    }
+    window.addEventListener('keydown', switchMode, true);
+    return () => window.removeEventListener('keydown', switchMode, true);
+  }, []);
+  useEffect(() => {
+    if (!modeFocus.current) return;
+    modeFocus.current = false;
+    document
+      .querySelector<HTMLElement>(
+        screen === 'sql'
+          ? '.sql-code-editor [contenteditable="true"]'
+          : '.view-switch button[aria-pressed="true"]',
+      )
+      ?.focus();
+  }, [screen]);
   const navigation = (
-    <nav className="view-switch" aria-label="画面切り替え">
+    <nav
+      className="view-switch"
+      aria-label="画面切り替え"
+      title="SQL / リレーション切り替え（Ctrl+Shift+M）"
+      aria-keyshortcuts="Control+Shift+m"
+    >
       <button aria-pressed={screen === 'relations'} onClick={() => setScreen('relations')}>
         <GitBranch size={17} />
         リレーション

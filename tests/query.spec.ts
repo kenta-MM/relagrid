@@ -1,5 +1,55 @@
 import { test, expect } from '@playwright/test';
 
+test('keyboard commands share execution and tab actions while respecting focus and IME', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'SQL', exact: true }).click();
+  const editor = page.getByRole('textbox', { name: 'SQLクエリ' });
+  await editor.fill('SELECT * FROM Customer LIMIT 3;');
+  await editor.press('Home');
+  await editor.press('Control+Shift+ArrowRight');
+  await editor.press('F5');
+  await expect(page.locator('.query-data tbody tr')).toHaveCount(3);
+  await expect(page.locator('.query-history button')).toHaveCount(1);
+  await editor.press('Control+Enter');
+  await expect(page.locator('.query-history button')).toHaveCount(2);
+  await editor.press('Control+t');
+  await expect(page.getByRole('tab', { name: 'Query 2', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(editor).toBeFocused();
+  await editor.press('Control+Shift+Tab');
+  await expect(page.getByRole('tab', { name: 'Query 1', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(editor).toBeFocused();
+  await editor.press('Control+Tab');
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await editor.press('Control+w');
+  await expect(page.getByRole('tab', { name: 'Query 2', exact: true })).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept());
+  await editor.press('Control+w');
+  await expect(page.getByRole('tab', { name: 'Query 2', exact: true })).toHaveCount(0);
+  await expect(editor).toBeFocused();
+  await editor.dispatchEvent('keydown', { key: 'F5', code: 'F5', isComposing: true });
+  await expect(page.locator('.query-history button')).toHaveCount(2);
+  await editor.press('Control+Shift+m');
+  await expect(page.getByRole('heading', { name: 'リレーションシップマップ' })).toBeVisible();
+  await page.keyboard.press('Control+Shift+m');
+  await expect(editor).toBeFocused();
+  const search = page.getByRole('textbox', { name: 'テーブル・カラムを検索' });
+  await search.press('Control+Shift+m');
+  await expect(editor).toBeVisible();
+  await page.getByRole('button', { name: '接続', exact: true }).click();
+  await page.getByLabel('データベース名').press('Control+Shift+m');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(editor).toBeVisible();
+});
+
 test('switches independent result sets and displays partial failure without hiding retained rows', async ({
   page,
 }) => {

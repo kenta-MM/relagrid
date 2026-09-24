@@ -3,6 +3,7 @@ import { Copy, Download, Play, Plus, Save, Table2, X, Clock, Database } from 'lu
 import { Button } from '@/components/ui/button';
 import type { QueryResult, QueryResultSet, Table } from '@/domain/database';
 import { SqlEditor } from './SqlEditor';
+import { claimShortcut, shortcutTarget } from '@/lib/shortcuts';
 
 interface ResultView {
   page: number;
@@ -157,6 +158,60 @@ export function QueryWorkspace({
   const [history, setHistory] = useState<Execution[]>([]);
   const [compare, setCompare] = useState(false);
   const current = tabs.find((tab) => tab.id === tabId)!;
+  function selectEditor(id: number) {
+    if (id === tabId) {
+      document.querySelector<HTMLElement>('.sql-code-editor [contenteditable="true"]')?.focus();
+      return;
+    }
+    setTabId(id);
+  }
+  function closeEditor(id: number) {
+    const tab = tabs.find((tab) => tab.id === id);
+    if (!tab || tab.executionId || tabs.length === 1) return;
+    if (tab.sql !== tab.savedSql && !window.confirm(`${tab.name}の未保存SQLを破棄しますか？`))
+      return;
+    setTabs((tabs) => tabs.filter((tab) => tab.id !== id));
+    if (tabId === id) selectEditor(tabs.find((tab) => tab.id !== id)!.id);
+  }
+  useEffect(() => {
+    function handleKey(event: KeyboardEvent) {
+      const target = shortcutTarget(event);
+      if (!active || !target?.closest('.query-workspace')) return;
+      const mod = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      let action: (() => void) | undefined;
+      if (mod && !event.altKey && !event.shiftKey && key === 't') action = () => add();
+      else if (mod && !event.altKey && !event.shiftKey && key === 'w')
+        action = () => closeEditor(tabId);
+      else if (mod && !event.altKey && key === 'tab')
+        action = () => {
+          const index = tabs.findIndex((tab) => tab.id === tabId);
+          selectEditor(tabs[(index + (event.shiftKey ? -1 : 1) + tabs.length) % tabs.length].id);
+        };
+      else if (
+        (!mod && !event.altKey && key === 'f5') ||
+        (mod && !event.altKey && !event.shiftKey && key === 'enter')
+      ) {
+        action = event.shiftKey ? () => void stop() : () => void run();
+      } else if (
+        event.altKey &&
+        !mod &&
+        !event.shiftKey &&
+        target.closest('.sql-results') &&
+        (key === 'arrowleft' || key === 'arrowright')
+      ) {
+        action = () => {
+          if (resultTab !== 'result' || sets.length < 2) return;
+          update(tabId, {
+            resultIndex: (resultIndex + (key === 'arrowleft' ? -1 : 1) + sets.length) % sets.length,
+          });
+        };
+      }
+      if (action) claimShortcut(event, action);
+    }
+    window.addEventListener('keydown', handleKey, true);
+    return () => window.removeEventListener('keydown', handleKey, true);
+  });
   const { resultTab } = current;
   const batch = resultTab === 'plan' ? current.plan : current.result;
   const sets = resultSets(batch);
@@ -221,7 +276,7 @@ export function QueryWorkspace({
       tab.readOnly = owner.readOnly;
     }
     setTabs((tabs) => [...tabs, tab]);
-    setTabId(id);
+    selectEditor(id);
   }
   async function run(explain = false) {
     if (!canRun || inFlight.current) return;
@@ -336,7 +391,13 @@ export function QueryWorkspace({
         </div>
         <section className="sql-editor-panel" aria-label="SQLエディタ">
           <div className="sql-toolbar">
-            <div className="query-tabs" role="tablist" aria-label="クエリ">
+            <div
+              className="query-tabs"
+              role="tablist"
+              aria-label="クエリ"
+              title="Ctrl+Tab: 次のエディタ / Ctrl+Shift+Tab: 前のエディタ"
+              aria-keyshortcuts="Control+Tab Control+Shift+Tab"
+            >
               {tabs.map((tab) => (
                 <div className={`query-tab ${tab.id === tabId ? 'active' : ''}`} key={tab.id}>
                   <button
@@ -345,7 +406,7 @@ export function QueryWorkspace({
                     title={`${tab.connectionLabel}${tab.sql !== tab.savedSql ? ' · 未保存' : ''}`}
                     aria-selected={tab.id === tabId}
                     onClick={() => {
-                      setTabId(tab.id);
+                      selectEditor(tab.id);
                     }}
                   >
                     <Table2 size={14} />
@@ -356,24 +417,24 @@ export function QueryWorkspace({
                   {tabs.length > 1 && (
                     <button
                       aria-label={`${tab.name}を閉じる`}
+                      title="閉じる（Ctrl+W）"
+                      aria-keyshortcuts="Control+w"
                       disabled={!!tab.executionId}
-                      onClick={() => {
-                        if (
-                          tab.executionId ||
-                          (tab.sql !== tab.savedSql &&
-                            !window.confirm(`${tab.name}の未保存SQLを破棄しますか？`))
-                        )
-                          return;
-                        setTabs((tabs) => tabs.filter((t) => t.id !== tab.id));
-                        if (tabId === tab.id) setTabId(tabs.find((t) => t.id !== tab.id)!.id);
-                      }}
+                      onClick={() => closeEditor(tab.id)}
                     >
                       <X size={12} />
                     </button>
                   )}
                 </div>
               ))}
-              <Button variant="ghost" size="icon" aria-label="新規クエリ" onClick={() => add()}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="新規クエリ"
+                title="新規クエリ（Ctrl+T）"
+                aria-keyshortcuts="Control+t"
+                onClick={() => add()}
+              >
                 <Plus size={18} />
               </Button>
             </div>
@@ -391,7 +452,13 @@ export function QueryWorkspace({
               >
                 比較
               </Button>
-              <Button size="sm" disabled={!canRun} onClick={() => void run()}>
+              <Button
+                size="sm"
+                disabled={!canRun}
+                title="SQL全文を実行（F5 / Ctrl+Enter）。選択範囲があっても全文を実行します。"
+                aria-keyshortcuts="F5 Control+Enter"
+                onClick={() => void run()}
+              >
                 <Play size={14} />
                 {current.executionId ? '実行中…' : '実行'}
               </Button>
@@ -400,6 +467,8 @@ export function QueryWorkspace({
                   variant="outline"
                   size="sm"
                   disabled={current.cancelling}
+                  title="このエディタの実行を中断（Shift+F5）"
+                  aria-keyshortcuts="Shift+F5"
                   onClick={() => void stop()}
                 >
                   {current.cancelling ? '中断待ち…' : '中断'}
@@ -416,14 +485,15 @@ export function QueryWorkspace({
                 ' · 実行するにはサイドバーでこの接続を選択してください'}
               {busy && !current.executionId && ' · 他の操作が完了するまで実行できません'}
             </span>
-            <span>Tab で補完 · Ctrl / ⌘ + Space で候補 · Ctrl / ⌘ + Enter で実行</span>
+            <span title="Ctrl+T: 新規 / Ctrl+W: 終了 / Ctrl+Tab・Ctrl+Shift+Tab: エディタ移動 / F5・Ctrl+Enter: 全文実行 / Shift+F5: 中断 / Ctrl+Shift+M: 画面切り替え / 結果内でAlt+←・→: 結果切り替え">
+              Tab で補完 · F5 / Ctrl+Enter で全文実行（選択範囲に関係なく）
+            </span>
           </div>
           <SqlEditor
             key={tabId}
             value={current.sql}
             tables={current.connectionId === connectionId ? tables : []}
             onChange={(sql) => update(tabId, { sql })}
-            onRun={() => void run()}
           />
           {compare && current.lastSql && (
             <div className="query-comparison">
@@ -432,7 +502,13 @@ export function QueryWorkspace({
             </div>
           )}
         </section>
-        <section className="sql-results" aria-label="クエリ実行結果">
+        <section
+          className="sql-results"
+          aria-label="クエリ実行結果"
+          tabIndex={0}
+          title="結果内でAlt+← / Alt+→: 前 / 次の結果"
+          aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+        >
           <div className="result-toolbar">
             <div role="tablist" aria-label="実行結果の表示">
               {[

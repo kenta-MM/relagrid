@@ -18,7 +18,6 @@ interface Props {
   value: string;
   tables: Table[];
   onChange(value: string): void;
-  onRun(): void;
 }
 const theme = EditorView.theme(
   {
@@ -40,12 +39,12 @@ const theme = EditorView.theme(
   { dark: true },
 );
 
-export function SqlEditor({ value, tables, onChange, onRun }: Props) {
+export function SqlEditor({ value, tables, onChange }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
   const completion = useRef(new Compartment());
-  const callbacks = useRef({ onChange, onRun });
-  callbacks.current = { onChange, onRun };
+  const callbacks = useRef({ onChange });
+  callbacks.current = { onChange };
   useEffect(() => {
     const view = new EditorView({
       parent: host.current!,
@@ -73,13 +72,6 @@ export function SqlEditor({ value, tables, onChange, onRun }: Props) {
           ),
           Prec.highest(
             keymap.of([
-              {
-                key: 'Mod-Enter',
-                run: () => {
-                  callbacks.current.onRun();
-                  return true;
-                },
-              },
               { key: 'Tab', run: acceptCompletion },
               { key: 'Mod-Space', run: startCompletion },
             ]),
@@ -93,6 +85,7 @@ export function SqlEditor({ value, tables, onChange, onRun }: Props) {
       }),
     });
     editor.current = view;
+    view.focus();
     return () => {
       editor.current = null;
       view.destroy();
