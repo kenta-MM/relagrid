@@ -18,3 +18,5 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 tokio = { version = "1", features = ["sync", "time"] }
 futures-util = "0.3"
 sqlparser = { version = "0.59", default-features = false, features = ["std", "visitor"] }
+tauri-plugin-dialog = "2"
+tempfile = "3"

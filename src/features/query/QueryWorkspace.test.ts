@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement } from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { QueryWorkspace } from './QueryWorkspace';
 import type { QueryResult, QueryResultSet } from '@/domain/database';
@@ -323,7 +323,9 @@ it('distinguishes empty table metadata and updates and exports only the selected
     filename = this.download;
   });
   click('エクスポート');
-  expect(filename).toBe('Query 1-result-2.csv');
+  expect(screen.getByRole('dialog').textContent).toContain('全件出力ではありません');
+  click('保存先を選んで出力');
+  await waitFor(() => expect(filename).toBe('Query 1-result-2.csv'));
   const text = await new Promise<string>((resolve) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));

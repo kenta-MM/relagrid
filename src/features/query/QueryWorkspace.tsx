@@ -3,7 +3,7 @@ import { Copy, Download, Play, Plus, Save, Table2, X, Clock, Database } from 'lu
 import { Button } from '@/components/ui/button';
 import type { QueryResult, QueryResultSet, Table } from '@/domain/database';
 import { SqlEditor } from './SqlEditor';
-import { exportGenericCsv } from '@/features/csv/csv';
+import { CsvExportDialog, type ExportSelection } from '@/features/csv/CsvExportDialog';
 import { claimShortcut, shortcutTarget } from '@/lib/shortcuts';
 
 interface ResultView {
@@ -158,6 +158,7 @@ export function QueryWorkspace({
   const [inspectorTab, setInspectorTab] = useState('summary');
   const [history, setHistory] = useState<Execution[]>([]);
   const [compare, setCompare] = useState(false);
+  const [exportSelection, setExportSelection] = useState<ExportSelection | null>(null);
   const current = tabs.find((tab) => tab.id === tabId)!;
   function selectEditor(id: number) {
     if (id === tabId) {
@@ -364,11 +365,11 @@ export function QueryWorkspace({
   }
   function exportCsv() {
     if (!result) return;
-    download(
-      `${current.name}${sets.length > 1 ? `-result-${resultIndex + 1}` : ''}.csv`,
-      exportGenericCsv(result),
-      'text/csv;charset=utf-8',
-    );
+    setExportSelection({
+      result,
+      name: `${current.name}${sets.length > 1 ? `-result-${resultIndex + 1}` : ''}.csv`,
+      label: `${current.name} / ${resultTab === 'plan' ? '実行計画' : `結果 ${resultIndex + 1}`}`,
+    });
   }
   if (!active) return null;
   return (
@@ -746,6 +747,9 @@ export function QueryWorkspace({
           </Button>
         </div>
       </aside>
+      {exportSelection && (
+        <CsvExportDialog selection={exportSelection} close={() => setExportSelection(null)} />
+      )}
     </div>
   );
 }

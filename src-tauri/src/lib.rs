@@ -1,3 +1,4 @@
+mod csv_export;
 mod database;
 mod models;
 
@@ -134,6 +135,8 @@ async fn disconnect_database(state: State<'_, AppState>) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(csv_export::CsvExportState::default())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             connect_database,
@@ -141,6 +144,10 @@ pub fn run() {
             preview_table,
             execute_query,
             cancel_query,
+            csv_export::begin_csv_export,
+            csv_export::write_csv_export,
+            csv_export::finish_csv_export,
+            csv_export::abort_csv_export,
             disconnect_database
         ])
         .run(tauri::generate_context!())

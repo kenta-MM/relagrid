@@ -54,12 +54,27 @@ test('switches independent result sets and displays partial failure without hidi
   page,
 }) => {
   await page.addInitScript(() => {
+    const exported = { name: '', text: '', complete: false, executions: 0 };
     Object.assign(window, {
+      exported,
       isTauri: true,
       __TAURI_INTERNALS__: {
-        invoke: async (command: string, args: { sql?: string }) => {
+        invoke: async (command: string, args: { sql?: string; name?: string; text?: string }) => {
+          if (command === 'begin_csv_export') {
+            exported.name = args.name!;
+            return 'export-1';
+          }
+          if (command === 'write_csv_export') {
+            exported.text += args.text;
+            return;
+          }
+          if (command === 'finish_csv_export') {
+            exported.complete = true;
+            return;
+          }
           if (command === 'connect_database') return { tables: [], relationships: [] };
           if (command !== 'execute_query') return;
+          exported.executions++;
           const resultSets = [
             {
               columns: ['customer'],
@@ -102,9 +117,27 @@ test('switches independent result sets and displays partial failure without hidi
   await page.getByRole('tab', { name: '結果 2', exact: true }).click();
   await expect(page.locator('.query-data')).toContainText('product-0');
   await expect(page.locator('.query-data')).not.toContainText('customer-');
-  const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'エクスポート', exact: true }).click();
-  expect((await download).suggestedFilename()).toBe('Query 2-result-2.csv');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('100件 / 2列（全ページ）');
+  await expect(dialog).toContainText('型保持形式は未対応');
+  await dialog.getByRole('button', { name: '保存先を選んで出力' }).click();
+  await expect(dialog.getByRole('status')).toContainText('100件の保存が完了');
+  const exported = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          exported: { name: string; text: string; complete: boolean; executions: number };
+        }
+      ).exported,
+  );
+  expect(exported.name).toBe('Query 2-result-2.csv');
+  expect(exported.complete).toBe(true);
+  expect(exported.executions).toBe(1);
+  expect(exported.text).toMatch(/^\uFEFF"product","price"\r\n/);
+  expect(exported.text).toContain('"product-99","500"');
+  expect(exported.text).not.toContain('customer-');
+  await dialog.getByRole('button', { name: '閉じる', exact: true }).first().click();
   await page.getByRole('tab', { name: 'Query 1', exact: true }).click();
   await page.getByRole('tab', { name: 'Query 2', exact: true }).click();
   await expect(page.getByRole('tab', { name: '結果 2' })).toHaveAttribute('aria-selected', 'true');
@@ -145,7 +178,13 @@ test('separates SQL workspace, executes and preserves tabs across screen changes
   await expect(page.locator('.query-data tbody tr')).toHaveCount(3);
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'エクスポート', exact: true }).click();
+  await page.getByRole('button', { name: '保存先を選んで出力' }).click();
   expect((await download).suggestedFilename()).toBe('Query 1.csv');
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: '閉じる', exact: true })
+    .first()
+    .click();
   await page.getByRole('tab', { name: '実行計画', exact: true }).click();
   await page.getByRole('button', { name: '実行計画を取得（EXPLAIN）' }).click();
   await expect(page.locator('.query-data')).toContainText('デモの実行計画');
