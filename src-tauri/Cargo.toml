@@ -20,3 +20,4 @@ futures-util = "0.3"
 sqlparser = { version = "0.59", default-features = false, features = ["std", "visitor"] }
 tauri-plugin-dialog = "2"
 tempfile = "3"
+csv = "1"

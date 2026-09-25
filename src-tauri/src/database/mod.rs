@@ -1,3 +1,3 @@
 pub mod mysql;
-mod mysql_sql;
+pub(crate) mod mysql_sql;
 pub mod query;

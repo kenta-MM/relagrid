@@ -199,6 +199,7 @@ export function App() {
             previewBusy={explorer.previewBusy}
             error={explorer.previewError}
             tableName={table?.name}
+            table={table}
             mode={explorer.mode}
             onClear={explorer.clearLogs}
           />

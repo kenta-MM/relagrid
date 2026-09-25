@@ -148,6 +148,7 @@ pub fn run() {
             csv_export::write_csv_export,
             csv_export::finish_csv_export,
             csv_export::abort_csv_export,
+            csv_export::export_table_csv,
             disconnect_database
         ])
         .run(tauri::generate_context!())

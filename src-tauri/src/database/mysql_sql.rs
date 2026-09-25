@@ -32,6 +32,37 @@ pub const RELATIONSHIPS: &str = r#"
 
 pub const PREVIEW_ROW_LIMIT: usize = 100;
 pub const PREVIEW_VALUE_LIMIT: usize = 500;
+pub const EXPORT_VALUE_LIMIT: usize = 1024 * 1024;
+pub fn export_cell_limit(table: &Table) -> usize {
+    EXPORT_VALUE_LIMIT.min(8 * 1024 * 1024 / table.columns.len().max(1))
+}
+
+/// Export is a catalog-derived SELECT, never a replay of user SQL. One extra
+/// byte detects oversized cells so they are rejected instead of truncated.
+pub fn export_query(table: &Table) -> String {
+    let columns = table
+        .columns
+        .iter()
+        .map(|column| {
+            let name = quote_identifier(&column.name);
+            let value = if is_binary_type(&column.data_type) {
+                format!("HEX({name})")
+            } else {
+                format!("CAST({name} AS CHAR CHARACTER SET utf8mb4)")
+            };
+            format!(
+                "LEFT(CAST({value} AS BINARY), {}) AS {name}",
+                export_cell_limit(table) + 1
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "SELECT {columns} FROM {}.{}",
+        quote_identifier(&table.schema),
+        quote_identifier(&table.name)
+    )
+}
 
 /// SQL parameters cannot bind identifiers. Only catalog-derived names reach this function.
 fn quote_identifier(name: &str) -> String {
@@ -96,6 +127,28 @@ pub fn preview_query(table: &Table) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn full_export_has_no_row_limit_and_bounds_each_wire_value() {
+        let table = Table {
+            id: "db.t".into(),
+            schema: "d`b".into(),
+            name: "t`x".into(),
+            estimated_rows: 0,
+            columns: vec![crate::models::Column {
+                name: "a`b".into(),
+                data_type: "blob".into(),
+                nullable: true,
+                primary_key: false,
+            }],
+        };
+        let sql = export_query(&table);
+        assert!(sql.contains("FROM `d``b`.`t``x`"));
+        assert!(sql.contains("LEFT(CAST(HEX(`a``b`) AS BINARY), 1048577)"));
+        assert!(!sql.contains(" LIMIT "));
+        let mut wide = table;
+        wide.columns = vec![wide.columns[0].clone(); 512];
+        assert_eq!(export_cell_limit(&wide), 16384);
+    }
 
     #[test]
     fn identifiers_are_escaped_as_single_identifiers() {

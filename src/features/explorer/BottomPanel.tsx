@@ -1,7 +1,10 @@
 import { Activity, LoaderCircle, Table2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import type { Preview } from '@/domain/database';
+import type { Preview, Table } from '@/domain/database';
+import { useState } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
+import { TableExportDialog } from '@/features/csv/TableExportDialog';
 import type { LogEntry } from './useExplorer';
 interface Props {
   tab: string;
@@ -11,6 +14,7 @@ interface Props {
   previewBusy: boolean;
   error: string;
   tableName?: string;
+  table?: Table;
   mode: string;
   onClear(): void;
 }
@@ -22,9 +26,11 @@ export function BottomPanel({
   previewBusy,
   error,
   tableName,
+  table,
   mode,
   onClear,
 }: Props) {
+  const [exportTable, setExportTable] = useState<Table | null>(null);
   return (
     <Tabs value={tab} onValueChange={onTab} className="bottom-panel">
       <div className="bottom-tabs">
@@ -43,9 +49,16 @@ export function BottomPanel({
             クリア
           </Button>
         ) : (
-          <span className="preview-caption">
-            {tableName} · {mode === 'demo' ? 'サンプルデータ' : '最大100件 / 各値500文字まで'}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="preview-caption">
+              {tableName} · {mode === 'demo' ? 'サンプルデータ' : '最大100件 / 各値500文字まで'}
+            </span>
+            {mode !== 'demo' && isTauri() && table && (
+              <Button variant="ghost" size="sm" onClick={() => setExportTable(table)}>
+                テーブル全件をCSV出力
+              </Button>
+            )}
+          </div>
         )}
       </div>
       <TabsContent value="activity" className="panel-scroll">
@@ -97,6 +110,7 @@ export function BottomPanel({
           </div>
         )}
       </TabsContent>
+      {exportTable && <TableExportDialog table={exportTable} close={() => setExportTable(null)} />}
     </Tabs>
   );
 }
