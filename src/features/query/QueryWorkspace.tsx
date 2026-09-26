@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Copy, Download, Play, Plus, Save, Table2, X, Clock, Database } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Copy, Download, Play, Plus, Save, Table2, X, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { QueryResult, QueryResultSet, Table } from '@/domain/database';
 import { SqlEditor } from './SqlEditor';
@@ -51,7 +51,6 @@ interface Execution {
 }
 interface Props {
   active: boolean;
-  navigation: ReactNode;
   tables: Table[];
   selected: string;
   readOnly: boolean;
@@ -115,7 +114,6 @@ function ResultTable({
 }
 export function QueryWorkspace({
   active,
-  navigation,
   tables,
   selected,
   readOnly,
@@ -375,16 +373,6 @@ export function QueryWorkspace({
   return (
     <div className="query-workspace" style={{ display: 'contents' }}>
       <main className="main-panel sql-main">
-        <div className="map-heading">
-          <div>
-            <div className="eyebrow">
-              <Database size={13} /> DATABASE EXPLORER
-            </div>
-            <h2>SQLエディタ</h2>
-            <p>データの探索・分析・抽出を、より自由に</p>
-          </div>
-          {navigation}
-        </div>
         <section className="sql-editor-panel" aria-label="SQLエディタ">
           <div className="sql-toolbar">
             <div
@@ -481,7 +469,7 @@ export function QueryWorkspace({
                 ' · 実行するにはサイドバーでこの接続を選択してください'}
               {busy && !current.executionId && ' · 他の操作が完了するまで実行できません'}
             </span>
-            <span title="Ctrl+T: 新規 / Ctrl+W: 終了 / Ctrl+Tab・Ctrl+Shift+Tab: エディタ移動 / F5・Ctrl+Enter: 全文実行 / Shift+F5: 中断 / Ctrl+Shift+M: 画面切り替え / 結果内でAlt+←・→: 結果切り替え">
+            <span title="Ctrl+T: 新規 / Ctrl+W: 終了 / Ctrl+Tab・Ctrl+Shift+Tab: エディタ移動 / F5・Ctrl+Enter: 全文実行 / Shift+F5: 中断 / Ctrl+1: リレーション / Ctrl+2: SQL / 結果内でAlt+←・→: 結果切り替え">
               Tab で補完 · F5 / Ctrl+Enter で全文実行（選択範囲に関係なく）
             </span>
           </div>

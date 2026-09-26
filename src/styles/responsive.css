@@ -15,9 +15,6 @@
     --sidebar-width: 195px;
     --inspector-width: 255px;
   }
-  .map-stats {
-    display: none;
-  }
   .details-panel {
     padding: 20px 13px;
   }

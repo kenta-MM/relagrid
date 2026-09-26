@@ -5,7 +5,7 @@ import { chromium, expect } from '@playwright/test';
 const browser = await chromium.connectOverCDP('http://127.0.0.1:9223');
 try {
   const page = browser.contexts()[0].pages()[0];
-  await expect(page.getByRole('heading', { name: 'リレーションシップマップ' })).toBeVisible();
+  await expect(page.locator('.graph-area')).toBeVisible();
   await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('ポート').fill('3307');
   await page.getByLabel('データベース名').fill('relagrid_fixture');

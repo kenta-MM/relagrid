@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { GitBranch, ShieldCheck, Database } from 'lucide-react';
+import { WindowHeader } from './WindowHeader';
 import { ConnectionDialog } from '@/features/connection/ConnectionDialog';
 import { SchemaGraph } from '@/features/graph/SchemaGraph';
 import { Sidebar } from '@/features/explorer/Sidebar';
@@ -54,7 +55,7 @@ export function App() {
             .querySelector<HTMLElement>(
               screen === 'sql'
                 ? '.sql-code-editor [contenteditable="true"]'
-                : '.main-panel .view-switch button[aria-pressed="true"]',
+                : '.view-switch button[aria-pressed="true"]',
             )
             ?.focus();
         }
@@ -71,19 +72,29 @@ export function App() {
       if (
         !shortcutTarget(event) ||
         !(event.ctrlKey || event.metaKey) ||
-        !event.shiftKey ||
         event.altKey ||
-        event.key.toLowerCase() !== 'm'
+        !(
+          (!event.shiftKey && (event.key === '1' || event.key === '2')) ||
+          (event.shiftKey && event.key.toLowerCase() === 'm')
+        )
       )
         return;
       claimShortcut(event, () => {
-        modeFocus.current = true;
-        setScreen((screen) => (screen === 'sql' ? 'relations' : 'sql'));
+        const nextScreen =
+          event.key === '1'
+            ? 'relations'
+            : event.key === '2'
+              ? 'sql'
+              : screen === 'sql'
+                ? 'relations'
+                : 'sql';
+        modeFocus.current = nextScreen !== screen;
+        setScreen(nextScreen);
       });
     }
     window.addEventListener('keydown', switchMode, true);
     return () => window.removeEventListener('keydown', switchMode, true);
-  }, []);
+  }, [screen]);
   useEffect(() => {
     if (!modeFocus.current) return;
     modeFocus.current = false;
@@ -99,14 +110,24 @@ export function App() {
     <nav
       className="view-switch"
       aria-label="画面切り替え"
-      title="SQL / リレーション切り替え（Ctrl+Shift+M）"
+      title="Ctrl+1: リレーション / Ctrl+2: SQL"
       aria-keyshortcuts="Control+Shift+m"
     >
-      <button aria-pressed={screen === 'relations'} onClick={() => setScreen('relations')}>
+      <button
+        aria-pressed={screen === 'relations'}
+        aria-keyshortcuts="Control+1"
+        title="リレーション（Ctrl+1）"
+        onClick={() => setScreen('relations')}
+      >
         <GitBranch size={17} />
         リレーション
       </button>
-      <button aria-pressed={screen === 'sql'} onClick={() => setScreen('sql')}>
+      <button
+        aria-pressed={screen === 'sql'}
+        aria-keyshortcuts="Control+2"
+        title="SQL（Ctrl+2）"
+        onClick={() => setScreen('sql')}
+      >
         <Database size={17} />
         SQL
       </button>
@@ -116,6 +137,7 @@ export function App() {
   const connection = explorer.connections.find((entry) => entry.id === explorer.activeConnectionId);
   return (
     <div className="app-shell">
+      <WindowHeader>{navigation}</WindowHeader>
       <div
         className={`workspace${sidebarOpen ? '' : ' sidebar-collapsed'}${inspectorOpen ? '' : ' inspector-collapsed'}`}
       >
@@ -147,25 +169,6 @@ export function App() {
           className="main-panel"
           style={{ display: screen === 'relations' ? undefined : 'none' }}
         >
-          <div className="map-heading">
-            <div>
-              <div className="eyebrow">
-                <GitBranch size={13} /> DATABASE EXPLORER
-              </div>
-              <h2>リレーションシップマップ</h2>
-              <p>テーブル間の関係と依存関係を視覚的に探索</p>
-            </div>
-            {navigation}
-            <div className="map-stats relation-stats">
-              <span>
-                <strong>{explorer.snapshot.tables.length}</strong> tables
-              </span>
-              <i />
-              <span>
-                <strong>{explorer.snapshot.relationships.length}</strong> relations
-              </span>
-            </div>
-          </div>
           <div className="graph-area">
             <SchemaGraph
               snapshot={explorer.snapshot}
@@ -216,7 +219,6 @@ export function App() {
               : `${explorer.database} (${connection?.host}:${connection?.port})`
           }
           active={screen === 'sql'}
-          navigation={navigation}
           tables={explorer.snapshot.tables}
           selected={explorer.selected}
           readOnly={explorer.readOnly}

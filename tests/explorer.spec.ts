@@ -3,7 +3,7 @@ test('explores a table, searches columns, and previews data', async ({ page }) =
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'リレーションシップマップ' })).toBeVisible();
+  await expect(page.locator('.graph-area')).toBeVisible();
   await expect(page.locator('.react-flow__node')).toHaveCount(7);
   await page.keyboard.press('/');
   await expect(page.getByRole('textbox', { name: 'テーブル・カラムを検索' })).toBeFocused();

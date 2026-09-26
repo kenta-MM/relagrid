@@ -1,37 +1,6 @@
-.view-switch {
-  display: flex;
-  flex-shrink: 0;
-  border: 1px solid #30384d;
-  border-radius: 8px;
-  background: #121a28;
-  padding: 3px;
-}
-.view-switch button {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 16px;
-  color: #9aaac4;
-  font-size: 12px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  white-space: nowrap;
-}
-.view-switch button[aria-pressed='true'] {
-  border-color: #9665e9;
-  color: #dfceff;
-  background: #7854c92b;
-  box-shadow: inset 0 0 0 1px #8958d34a;
-}
-.relation-stats {
-  display: none;
-}
 .sql-main {
-  padding-bottom: 15px;
+  padding: 14px 0 15px;
   gap: 14px;
-}
-.sql-main .map-heading {
-  padding-bottom: 0;
 }
 .sql-editor-panel,
 .sql-results {
@@ -288,10 +257,6 @@
   .view-switch button {
     padding: 8px;
     gap: 5px;
-  }
-  .sql-main .map-heading {
-    padding-left: 16px;
-    padding-right: 16px;
   }
   .query-actions {
     width: 100%;

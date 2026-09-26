@@ -1,5 +1,34 @@
 import { test, expect } from '@playwright/test';
 
+test('header shortcuts select a workspace and preserve SQL when returning', async ({ page }) => {
+  await page.goto('/');
+  const relations = page.getByRole('button', { name: 'リレーション', exact: true });
+  const sql = page.getByRole('button', { name: 'SQL', exact: true });
+  const editor = page.getByRole('textbox', { name: 'SQLクエリ' });
+  await expect(page.getByRole('navigation', { name: '画面切り替え' })).toHaveCount(1);
+  await page.keyboard.press('Control+2');
+  await expect(sql).toHaveAttribute('aria-pressed', 'true');
+  await expect(editor).toBeFocused();
+  await editor.fill('SELECT 42;');
+  await editor.press('Control+2');
+  await expect(editor).toHaveText('SELECT 42;');
+  await editor.press('Control+1');
+  await expect(relations).toHaveAttribute('aria-pressed', 'true');
+  await expect(relations).toBeFocused();
+  await page.keyboard.press('Control+1');
+  await expect(page.locator('.graph-area')).toBeVisible();
+  const header = await page.locator('.window-header').boundingBox();
+  const graph = await page.locator('.graph-area').boundingBox();
+  expect(graph!.y).toBe(header!.y + header!.height);
+  await page.keyboard.press('Control+2');
+  await expect(editor).toHaveText('SELECT 42;');
+  await page.getByRole('button', { name: '接続を追加', exact: true }).click();
+  await page.getByLabel('データベース名').press('Control+1');
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sql).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('keyboard commands share execution and tab actions while respecting focus and IME', async ({
   page,
 }) => {
@@ -37,7 +66,7 @@ test('keyboard commands share execution and tab actions while respecting focus a
   await editor.dispatchEvent('keydown', { key: 'F5', code: 'F5', isComposing: true });
   await expect(page.locator('.query-history button')).toHaveCount(2);
   await editor.press('Control+Shift+m');
-  await expect(page.getByRole('heading', { name: 'リレーションシップマップ' })).toBeVisible();
+  await expect(page.locator('.graph-area')).toBeVisible();
   await page.keyboard.press('Control+Shift+m');
   await expect(editor).toBeFocused();
   const search = page.getByRole('textbox', { name: 'テーブル・カラムを検索' });
@@ -155,7 +184,7 @@ test('separates SQL workspace, executes and preserves tabs across screen changes
 }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'SQL', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'SQLエディタ' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'SQLエディタ', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'アクティビティ', exact: true })).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'データプレビュー', exact: true })).toHaveCount(0);
   await page.getByRole('textbox', { name: 'SQLクエリ' }).fill('SELECT * FROM Customer LIMIT 3;');
