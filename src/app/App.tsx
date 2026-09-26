@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Boxes, Search, Plug, RefreshCw, GitBranch, ShieldCheck, Database } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { GitBranch, ShieldCheck, Database } from 'lucide-react';
 import { ConnectionDialog } from '@/features/connection/ConnectionDialog';
 import { SchemaGraph } from '@/features/graph/SchemaGraph';
 import { Sidebar } from '@/features/explorer/Sidebar';
@@ -26,7 +25,8 @@ export function App() {
       )
         return;
       event.preventDefault();
-      searchInput.current?.focus();
+      setSidebarOpen(true);
+      requestAnimationFrame(() => searchInput.current?.focus());
     }
     window.addEventListener('keydown', focusSearch);
     return () => window.removeEventListener('keydown', focusSearch);
@@ -116,53 +116,6 @@ export function App() {
   const connection = explorer.connections.find((entry) => entry.id === explorer.activeConnectionId);
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div className="brand">
-          <span className="brand-icon">
-            <Boxes size={27} />
-          </span>
-          <div>
-            <h1>RelaGrid</h1>
-            <p>データのつながりを、見える化する</p>
-          </div>
-        </div>
-        <div className="global-search">
-          <Search size={17} />
-          <input
-            ref={searchInput}
-            aria-keyshortcuts="/"
-            aria-label="テーブル・カラムを検索"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="テーブル名・カラム名で検索…"
-          />
-          {query && (
-            <button aria-label="検索をクリア" onClick={() => setQuery('')}>
-              ×
-            </button>
-          )}
-          <span>/</span>
-        </div>
-        <div className="header-actions">
-          <span className="environment-badge">{explorer.mode === 'demo' ? 'DEMO' : 'MYSQL'}</span>
-          <Button
-            variant="outline"
-            onClick={() => setConnectionOpen(true)}
-            disabled={explorer.busy}
-          >
-            <Plug size={16} />
-            接続
-          </Button>
-          <Button onClick={() => void explorer.refresh()} disabled={explorer.busy}>
-            <RefreshCw size={15} className={explorer.busy ? 'animate-spin' : ''} />
-            更新
-          </Button>
-          <span className="connection-status">
-            <span className={`status-dot ${explorer.mode === 'demo' ? 'demo' : ''}`} />
-            {explorer.mode === 'demo' ? 'デモモード' : explorer.database}
-          </span>
-        </div>
-      </header>
       <div
         className={`workspace${sidebarOpen ? '' : ' sidebar-collapsed'}${inspectorOpen ? '' : ' inspector-collapsed'}`}
       >
@@ -171,6 +124,9 @@ export function App() {
           snapshot={explorer.snapshot}
           selected={explorer.selected}
           query={query}
+          onQueryChange={setQuery}
+          searchInputRef={searchInput}
+          onRefresh={() => void explorer.refresh()}
           database={explorer.database}
           connections={explorer.connections}
           connectionGroups={explorer.connectionGroups}

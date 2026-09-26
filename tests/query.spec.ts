@@ -43,7 +43,7 @@ test('keyboard commands share execution and tab actions while respecting focus a
   const search = page.getByRole('textbox', { name: 'テーブル・カラムを検索' });
   await search.press('Control+Shift+m');
   await expect(editor).toBeVisible();
-  await page.getByRole('button', { name: '接続', exact: true }).click();
+  await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('データベース名').press('Control+Shift+m');
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');

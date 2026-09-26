@@ -29,7 +29,7 @@ test('Ctrl+B preserves the sidebar tree and expands both workspaces', async ({ p
   await expect(sidebar).toBeVisible();
   await editor.dispatchEvent('keydown', { key: 'b', ctrlKey: true, isComposing: true });
   await expect(sidebar).toBeVisible();
-  await page.getByRole('button', { name: '接続', exact: true }).click();
+  await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('データベース名').press('Control+b');
   await expect(sidebar).toBeVisible();
 });

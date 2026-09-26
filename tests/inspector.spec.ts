@@ -42,7 +42,11 @@ test('Ctrl+Alt+B toggles the inspector independently and preserves its state', a
     isComposing: true,
   });
   await expect(inspector).toBeVisible();
-  await page.getByRole('button', { name: '接続', exact: true }).click();
+  await page.getByRole('button', { name: 'SQL', exact: true }).focus();
+  await page.keyboard.press('/');
+  await expect(sidebar).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'テーブル・カラムを検索' })).toBeFocused();
+  await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('データベース名').press('Control+Alt+b');
   await expect(inspector).toBeVisible();
 });

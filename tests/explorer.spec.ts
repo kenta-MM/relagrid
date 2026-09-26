@@ -50,7 +50,7 @@ test('connection dialog explains desktop requirement without losing demo data', 
   page,
 }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '接続', exact: true }).click();
+  await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('データベース名').fill('sales');
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
   await expect(page.getByRole('alert')).toContainText('デスクトップ版');

@@ -6,9 +6,6 @@
   .details-panel {
     padding: 25px 22px;
   }
-  .app-header {
-    gap: 55px;
-  }
   .bottom-panel {
     height: 200px;
   }
@@ -18,26 +15,10 @@
     --sidebar-width: 195px;
     --inspector-width: 255px;
   }
-  .app-header {
-    gap: 18px;
-    padding: 0 16px;
-  }
-  .brand {
-    min-width: 180px;
-  }
-  .brand p {
-    font-size: 8px;
-  }
-  .connection-status {
-    display: none;
-  }
   .map-stats {
     display: none;
   }
   .details-panel {
     padding: 20px 13px;
-  }
-  .header-actions {
-    gap: 8px;
   }
 }

@@ -44,6 +44,8 @@
 }
 .connection-actions {
   display: flex;
+  align-items: center;
+  gap: 3px;
 }
 .connection-actions button {
   width: 28px;
@@ -242,4 +244,43 @@
   color: #63718a;
   font-size: 10px;
   padding: 18px 6px;
+}
+
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-width: 0;
+  height: 36px;
+  margin-bottom: 10px;
+  padding: 0 8px;
+  border: 1px solid #333c50;
+  border-radius: 8px;
+  background: #101621;
+  color: #8593ad;
+}
+.sidebar-search:focus-within {
+  border-color: #a27bfc;
+}
+.sidebar-search > svg,
+.sidebar-search > span,
+.sidebar-search > button {
+  flex-shrink: 0;
+}
+.sidebar-search input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: none;
+  color: #e8ebf3;
+  font-size: 11px;
+}
+.sidebar-search > span {
+  border: 1px solid #31384a;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 10px;
 }

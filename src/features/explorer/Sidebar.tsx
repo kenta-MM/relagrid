@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from 'react';
+import { useRef, useState, type RefObject, type DragEvent } from 'react';
 import {
   ChevronDown,
   Database,
@@ -8,6 +8,7 @@ import {
   Layers3,
   Plus,
   Search,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GroupDialog } from '@/features/connection/GroupDialog';
@@ -18,6 +19,9 @@ interface Props {
   snapshot: SchemaSnapshot;
   selected: string;
   query: string;
+  onQueryChange(query: string): void;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  onRefresh(): void;
   database: string;
   connections: ConnectionEntry[];
   connectionGroups: string[];
@@ -39,6 +43,9 @@ export function Sidebar({
   snapshot,
   selected,
   query,
+  onQueryChange,
+  searchInputRef,
+  onRefresh,
   database,
   connections,
   connectionGroups,
@@ -146,6 +153,24 @@ export function Sidebar({
   }
   return (
     <aside className="sidebar" hidden={hidden} aria-keyshortcuts="Control+b Meta+b">
+      <div className="sidebar-search">
+        <Search size={15} />
+        <input
+          ref={searchInputRef}
+          aria-keyshortcuts="/"
+          aria-label="テーブル・カラムを検索"
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="テーブル・カラムを検索…"
+          title="テーブル名・カラム名で検索（/）"
+        />
+        {query && (
+          <button aria-label="検索をクリア" onClick={() => onQueryChange('')}>
+            ×
+          </button>
+        )}
+        <span>/</span>
+      </div>
       <div className="section-label">
         <span>
           <Database size={14} /> CONNECTIONS
@@ -213,7 +238,19 @@ export function Sidebar({
         <span>
           <Layers3 size={14} /> SCHEMAS
         </span>
-        <span>{snapshot.tables.length}</span>
+        <div className="connection-actions">
+          <span>{snapshot.tables.length}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRefresh}
+            disabled={busy}
+            aria-label="更新"
+            title="スキーマを更新"
+          >
+            <RefreshCw size={14} className={busy ? 'animate-spin' : ''} />
+          </Button>
+        </div>
       </div>
       <nav aria-label="テーブル一覧" className="schema-tree">
         {schemas.map((schema) => (

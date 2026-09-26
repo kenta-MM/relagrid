@@ -6,7 +6,7 @@ const browser = await chromium.connectOverCDP('http://127.0.0.1:9223');
 try {
   const page = browser.contexts()[0].pages()[0];
   await expect(page.getByRole('heading', { name: 'リレーションシップマップ' })).toBeVisible();
-  await page.getByRole('button', { name: '接続', exact: true }).click();
+  await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('ポート').fill('3307');
   await page.getByLabel('データベース名').fill('relagrid_fixture');
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
@@ -21,7 +21,7 @@ try {
   await expect(page.locator('.data-table')).toContainText('1234.50');
   await expect(page.locator('.data-table')).toContainText('00FF');
   // A failed replacement must leave the existing connection intact.
-  await page.getByRole('button', { name: '接続', exact: true }).click();
+  await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('ポート').fill('3307');
   await page.getByLabel('データベース名').fill('relagrid_nonexistent_fixture');
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
