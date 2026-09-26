@@ -37,6 +37,34 @@ export function App() {
   const [relatedOnly, setRelatedOnly] = useState(false);
   const [tab, setTab] = useState('activity');
   const [screen, setScreen] = useState<'relations' | 'sql'>('relations');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  useEffect(() => {
+    function togglePanel(event: KeyboardEvent) {
+      if (
+        !shortcutTarget(event) ||
+        !(event.ctrlKey || event.metaKey) ||
+        event.shiftKey ||
+        event.key.toLowerCase() !== 'b'
+      )
+        return;
+      claimShortcut(event, () => {
+        if (document.activeElement?.closest(event.altKey ? '.details-panel' : '.sidebar')) {
+          document
+            .querySelector<HTMLElement>(
+              screen === 'sql'
+                ? '.sql-code-editor [contenteditable="true"]'
+                : '.main-panel .view-switch button[aria-pressed="true"]',
+            )
+            ?.focus();
+        }
+        if (event.altKey) setInspectorOpen((open) => !open);
+        else setSidebarOpen((open) => !open);
+      });
+    }
+    window.addEventListener('keydown', togglePanel, true);
+    return () => window.removeEventListener('keydown', togglePanel, true);
+  }, [screen]);
   const modeFocus = useRef(false);
   useEffect(() => {
     function switchMode(event: KeyboardEvent) {
@@ -135,8 +163,11 @@ export function App() {
           </span>
         </div>
       </header>
-      <div className="workspace">
+      <div
+        className={`workspace${sidebarOpen ? '' : ' sidebar-collapsed'}${inspectorOpen ? '' : ' inspector-collapsed'}`}
+      >
         <Sidebar
+          hidden={!sidebarOpen}
           snapshot={explorer.snapshot}
           selected={explorer.selected}
           query={query}

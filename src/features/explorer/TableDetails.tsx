@@ -22,7 +22,7 @@ export function TableDetails({
 }: Props) {
   if (!table)
     return (
-      <aside className="details-panel">
+      <aside className="details-panel" aria-keyshortcuts="Control+Alt+b Meta+Alt+b">
         <h2>テーブル詳細</h2>
         <p className="muted">テーブルを選択してください。</p>
       </aside>
@@ -47,7 +47,7 @@ export function TableDetails({
       );
     });
   return (
-    <aside className="details-panel">
+    <aside className="details-panel" aria-keyshortcuts="Control+Alt+b Meta+Alt+b">
       <div className="details-title">
         <h2>テーブル詳細</h2>
         <span className="tiny-label">INSPECTOR</span>

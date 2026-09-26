@@ -6,6 +6,9 @@
   flex-direction: column;
   min-height: 0;
 }
+.sidebar[hidden] {
+  display: none;
+}
 .section-label {
   display: flex;
   align-items: center;
@@ -231,29 +234,7 @@
   border-radius: 50%;
 }
 .sidebar-bottom {
-  padding-top: 16px;
-}
-.tip-card {
-  border: 1px solid #2b3545;
-  border-radius: 9px;
-  background: linear-gradient(130deg, #202836, #17202b);
-  padding: 15px 12px;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-.tip-card svg {
-  color: #c3ad76;
-}
-.tip-card p {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.9;
-  color: #98a7bf;
-}
-.tip-card strong {
-  font-weight: 500;
-  color: #c0cce0;
+  flex-shrink: 0;
 }
 .sidebar-version {
   display: flex;

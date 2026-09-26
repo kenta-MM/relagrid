@@ -1,6 +1,7 @@
 @media (min-width: 1600px) {
   .workspace {
-    grid-template-columns: 250px minmax(0, 1fr) 325px;
+    --sidebar-width: 250px;
+    --inspector-width: 325px;
   }
   .details-panel {
     padding: 25px 22px;
@@ -14,7 +15,8 @@
 }
 @media (max-width: 1150px) {
   .workspace {
-    grid-template-columns: 195px minmax(0, 1fr) 255px;
+    --sidebar-width: 195px;
+    --inspector-width: 255px;
   }
   .app-header {
     gap: 18px;

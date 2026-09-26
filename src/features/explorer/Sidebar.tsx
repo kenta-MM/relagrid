@@ -7,7 +7,6 @@ import {
   Table2,
   Layers3,
   Plus,
-  Sparkles,
   Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,6 +14,7 @@ import { GroupDialog } from '@/features/connection/GroupDialog';
 import type { ConnectionEntry, SchemaSnapshot } from '@/domain/database';
 import { DEMO_CONNECTION_ID } from '@/domain/database';
 interface Props {
+  hidden?: boolean;
   snapshot: SchemaSnapshot;
   selected: string;
   query: string;
@@ -35,6 +35,7 @@ interface Props {
   onDemo(): void;
 }
 export function Sidebar({
+  hidden,
   snapshot,
   selected,
   query,
@@ -144,7 +145,7 @@ export function Sidebar({
     );
   }
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" hidden={hidden} aria-keyshortcuts="Control+b Meta+b">
       <div className="section-label">
         <span>
           <Database size={14} /> CONNECTIONS
@@ -246,14 +247,6 @@ export function Sidebar({
         )}
       </nav>
       <div className="sidebar-bottom">
-        <div className="tip-card">
-          <Sparkles size={19} />
-          <p>
-            データのつながりを、
-            <br />
-            <strong>見えるかたちに。</strong>
-          </p>
-        </div>
         {mode !== 'demo' && (
           <Button variant="ghost" className="w-full mt-3" disabled={busy} onClick={onDemo}>
             デモに切り替え・切断

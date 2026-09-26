@@ -640,7 +640,7 @@ export function QueryWorkspace({
           </div>
         </section>
       </main>
-      <aside className="details-panel query-inspector">
+      <aside className="details-panel query-inspector" aria-keyshortcuts="Control+Alt+b Meta+Alt+b">
         <div className="details-title">
           <h2>クエリ詳細</h2>
           <span className="tiny-label">INSPECTOR</span>
