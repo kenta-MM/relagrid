@@ -1,7 +1,8 @@
+import { openFixture } from './helpers/connection-fixture';
 import { test, expect } from '@playwright/test';
 
 test('header shortcuts select a workspace and preserve SQL when returning', async ({ page }) => {
-  await page.goto('/');
+  await openFixture(page);
   const relations = page.getByRole('button', { name: 'リレーション', exact: true });
   const sql = page.getByRole('button', { name: 'SQL', exact: true });
   const editor = page.getByRole('textbox', { name: 'SQLクエリ' });
@@ -32,7 +33,7 @@ test('header shortcuts select a workspace and preserve SQL when returning', asyn
 test('keyboard commands share execution and tab actions while respecting focus and IME', async ({
   page,
 }) => {
-  await page.goto('/');
+  await openFixture(page);
   await page.getByRole('button', { name: 'SQL', exact: true }).click();
   const editor = page.getByRole('textbox', { name: 'SQLクエリ' });
   await editor.fill('SELECT * FROM Customer LIMIT 3;');
@@ -89,6 +90,8 @@ test('switches independent result sets and displays partial failure without hidi
       isTauri: true,
       __TAURI_INTERNALS__: {
         invoke: async (command: string, args: { sql?: string; name?: string; text?: string }) => {
+          if (command === 'load_connections') return { connections: [], groups: [] };
+          if (command === 'save_connections') return;
           if (command === 'begin_csv_export') {
             exported.name = args.name!;
             return 'export-1';
@@ -160,15 +163,15 @@ test('switches independent result sets and displays partial failure without hidi
         }
       ).exported,
   );
-  expect(exported.name).toBe('Query 2-result-2.csv');
+  expect(exported.name).toBe('Query 1-result-2.csv');
   expect(exported.complete).toBe(true);
   expect(exported.executions).toBe(1);
   expect(exported.text).toMatch(/^\uFEFF"product","price"\r\n/);
   expect(exported.text).toContain('"product-99","500"');
   expect(exported.text).not.toContain('customer-');
   await dialog.getByRole('button', { name: '閉じる', exact: true }).first().click();
+  await page.getByRole('button', { name: '新規クエリ', exact: true }).first().click();
   await page.getByRole('tab', { name: 'Query 1', exact: true }).click();
-  await page.getByRole('tab', { name: 'Query 2', exact: true }).click();
   await expect(page.getByRole('tab', { name: '結果 2' })).toHaveAttribute('aria-selected', 'true');
   await page.getByRole('tab', { name: '結果 1', exact: true }).click();
   await expect(page.locator('.query-data')).toContainText('customer-10');
@@ -182,7 +185,7 @@ test('switches independent result sets and displays partial failure without hidi
 test('separates SQL workspace, executes and preserves tabs across screen changes', async ({
   page,
 }) => {
-  await page.goto('/');
+  await openFixture(page);
   await page.getByRole('button', { name: 'SQL', exact: true }).click();
   await expect(page.getByRole('region', { name: 'SQLエディタ', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'アクティビティ', exact: true })).toHaveCount(0);
@@ -205,6 +208,7 @@ test('separates SQL workspace, executes and preserves tabs across screen changes
   );
   await page.getByRole('tab', { name: 'Query 1', exact: true }).click();
   await expect(page.locator('.query-data tbody tr')).toHaveCount(3);
+  await page.evaluate(() => Object.assign(window, { isTauri: false }));
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'エクスポート', exact: true }).click();
   await page.getByRole('button', { name: '保存先を選んで出力' }).click();
@@ -239,7 +243,7 @@ test('connection mode defaults to read only and can be changed', async ({ page }
 test('SQL editor completes types and scoped columns with Tab and marks mistyped types', async ({
   page,
 }) => {
-  await page.goto('/');
+  await openFixture(page);
   await page.getByRole('button', { name: 'SQL', exact: true }).click();
   const editor = page.getByRole('textbox', { name: 'SQLクエリ' });
   await editor.fill('SELECT CAST(1 AS ');

@@ -143,10 +143,8 @@ export function App() {
           onQueryChange={setQuery}
           searchInputRef={searchInput}
           onRefresh={() => void explorer.refresh()}
-          database={explorer.database}
           connections={explorer.connections}
           connectionGroups={explorer.connectionGroups}
-          demoGroup={explorer.demoGroup}
           onAddGroup={explorer.addConnectionGroup}
           onMoveConnection={explorer.moveConnection}
           activeConnectionId={explorer.activeConnectionId}
@@ -157,7 +155,7 @@ export function App() {
           readOnly={explorer.readOnly}
           onSelect={explorer.select}
           onConnect={() => setConnectionOpen(true)}
-          onDemo={() => void explorer.useDemo()}
+          onDisconnect={() => void explorer.disconnect()}
         />
         <main
           className="main-panel"
@@ -208,8 +206,8 @@ export function App() {
         <QueryWorkspace
           connectionId={explorer.activeConnectionId ?? 0}
           connectionLabel={
-            explorer.mode === 'demo'
-              ? 'デモ'
+            explorer.mode === 'disconnected'
+              ? '未接続'
               : `${explorer.database} (${connection?.host}:${connection?.port})`
           }
           active={screen === 'sql'}
@@ -225,7 +223,9 @@ export function App() {
       <footer className="status-bar">
         <span>
           <Database size={12} />
-          {explorer.mode === 'demo' ? 'サンプルデータを表示中' : `MySQL · ${explorer.database}`}
+          {explorer.mode === 'disconnected'
+            ? '未接続 — 接続を追加または選択してください'
+            : `MySQL · ${explorer.database}`}
         </span>
         <span>
           <ShieldCheck size={12} />

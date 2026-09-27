@@ -21,3 +21,10 @@ sqlparser = { version = "0.59", default-features = false, features = ["std", "vi
 tauri-plugin-dialog = "2"
 tempfile = "3"
 csv = "1"
+serde_json = "1"
+aes-gcm = "0.10.3"
+base64 = "0.22"
+zeroize = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }

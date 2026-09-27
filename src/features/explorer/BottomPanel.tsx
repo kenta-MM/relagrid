@@ -50,10 +50,8 @@ export function BottomPanel({
           </Button>
         ) : (
           <div className="flex items-center gap-2">
-            <span className="preview-caption">
-              {tableName} · {mode === 'demo' ? 'サンプルデータ' : '最大100件 / 各値500文字まで'}
-            </span>
-            {mode !== 'demo' && isTauri() && table && (
+            <span className="preview-caption">{tableName} · 最大100件 / 各値500文字まで</span>
+            {mode === 'mysql' && isTauri() && table && (
               <Button variant="ghost" size="sm" onClick={() => setExportTable(table)}>
                 テーブル全件をCSV出力
               </Button>

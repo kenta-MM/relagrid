@@ -1,10 +1,11 @@
+import { openFixture } from './helpers/connection-fixture';
 import { test, expect, type Page } from '@playwright/test';
 async function settings(page: Page) {
   await page.getByRole('button', { name: 'settings', exact: true }).click();
   await page.getByRole('button', { name: 'Short cut key', exact: true }).click();
 }
 test('settings saves separate sidebar keys and supports a shared toggle', async ({ page }) => {
-  await page.goto('/');
+  await openFixture(page);
   await page.getByRole('button', { name: 'settings', exact: true }).click();
   await page.getByRole('button', { name: 'General', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('RelaGrid');
@@ -33,7 +34,7 @@ test('settings saves separate sidebar keys and supports a shared toggle', async 
   await expect(page.locator('.sidebar')).toBeHidden();
 });
 test('settings prevents collisions, cancels drafts and remaps SQL execution', async ({ page }) => {
-  await page.goto('/');
+  await openFixture(page);
   await settings(page);
   await page.getByLabel('サイドバーを開く', { exact: true }).press('Control+2');
   await expect(page.getByRole('alert')).toContainText('同じキー');

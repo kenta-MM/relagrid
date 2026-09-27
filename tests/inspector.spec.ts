@@ -1,7 +1,8 @@
+import { openFixture } from './helpers/connection-fixture';
 import { test, expect } from '@playwright/test';
 
 test('Ctrl+Alt+B toggles the inspector independently and preserves its state', async ({ page }) => {
-  await page.goto('/');
+  await openFixture(page);
   const details = page.locator('.relation-details .details-panel');
   const sidebar = page.locator('.sidebar');
   const main = page.locator('.main-panel:visible');

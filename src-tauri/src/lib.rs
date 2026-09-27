@@ -1,3 +1,4 @@
+mod connection_store;
 mod csv_export;
 mod database;
 mod models;
@@ -138,7 +139,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(csv_export::CsvExportState::default())
         .manage(AppState::default())
+        .manage(connection_store::StoreState::default())
         .invoke_handler(tauri::generate_handler![
+            connection_store::load_connections,
+            connection_store::save_connections,
             connect_database,
             refresh_schema,
             preview_table,

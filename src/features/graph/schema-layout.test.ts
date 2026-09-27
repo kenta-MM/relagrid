@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { layoutTables } from './schema-layout';
 import { relatedTableIds, type SchemaSnapshot } from '@/domain/database';
-import { demoSnapshot } from '@/data/demo';
+import { demoSnapshot } from '../../../tests/fixtures/demo';
 describe('schema graph', () => {
   it('places all tables once without overlaps within a layer', () => {
     const positions = layoutTables(demoSnapshot);

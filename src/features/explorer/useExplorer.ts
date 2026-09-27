@@ -1,7 +1,6 @@
-import { useCallback, useRef, useState } from 'react';
-import { demoGateway, demoSnapshot } from '@/data/demo';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { connectionStore, type SavedConnections } from '@/data/connection-store';
 import { mysqlGateway } from '@/data/tauri-gateway';
-import { DEMO_CONNECTION_ID } from '@/domain/database';
 import type {
   ConnectionConfig,
   ConnectionEntry,
@@ -16,17 +15,19 @@ export interface LogEntry {
   error: boolean;
 }
 export function useExplorer() {
-  const [snapshot, setSnapshot] = useState(demoSnapshot);
-  const [selected, setSelected] = useState('sales.Order');
-  const [mode, setMode] = useState<'demo' | 'mysql'>('demo');
-  const [database, setDatabase] = useState('SalesDB');
+  const [snapshot, setSnapshot] = useState<SchemaSnapshot>({ tables: [], relationships: [] });
+  const [selected, setSelected] = useState('');
+  const [mode, setMode] = useState<'disconnected' | 'mysql'>('disconnected');
+  const [database, setDatabase] = useState('');
   const [readOnly, setReadOnly] = useState(true);
   const [connections, setConnections] = useState<ConnectionEntry[]>([]);
   const [connectionGroups, setConnectionGroups] = useState<string[]>([]);
-  const [demoGroup, setDemoGroup] = useState<string | undefined>();
   const [activeConnectionId, setActiveConnectionId] = useState<number | null>(null);
   const [connectionError, setConnectionError] = useState('');
-  // Credentials are kept only in memory for reconnecting during this app session.
+  const [loading, setLoading] = useState(true);
+  const storageReady = useRef(false);
+  const groupsRef = useRef<string[]>([]);
+  // Plaintext credentials exist only in memory; the native store encrypts them on disk.
   const connectionConfigs = useRef(new Map<number, ConnectionConfig>());
   const nextConnectionId = useRef(1);
   const [sessionId, setSessionId] = useState(0);
@@ -34,15 +35,8 @@ export function useExplorer() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewError, setPreviewError] = useState('');
-  const [logs, setLogs] = useState<LogEntry[]>([
-    {
-      id: 0,
-      time: new Date().toLocaleTimeString('ja-JP'),
-      message: 'デモスキーマを読み込みました · 7 tables / 6 relationships',
-      error: false,
-    },
-  ]);
-  const gateway = useRef<DatabaseGateway>(demoGateway);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const gateway = useRef<DatabaseGateway>(mysqlGateway);
   // Cache belongs to this connection/schema session and never persists to disk.
   const previewsByTable = useRef(new Map<string, Preview>());
   const revision = useRef(0);
@@ -57,9 +51,70 @@ export function useExplorer() {
     };
     setLogs((current) => [...current.slice(-99), entry]);
   }, []);
+  useEffect(() => {
+    let cancelled = false;
+    void connectionStore
+      .load()
+      .then((data) => {
+        if (cancelled) return;
+        connectionConfigs.current = new Map(
+          data.connections.map(({ id, group, config }) => [
+            id,
+            { ...config, group: group ?? undefined },
+          ]),
+        );
+        nextConnectionId.current = Math.max(0, ...data.connections.map(({ id }) => id)) + 1;
+        groupsRef.current = data.groups;
+        setConnectionGroups(data.groups);
+        setConnections(
+          data.connections.map(({ id, group, config }) => ({
+            id,
+            group: group ?? undefined,
+            host: config.host,
+            port: config.port,
+            database: config.database,
+          })),
+        );
+        storageReady.current = true;
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = String(error instanceof Error ? error.message : error);
+        setConnectionError(message);
+        log(message, true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [log]);
+  function storedData(
+    configs = connectionConfigs.current,
+    groups = groupsRef.current,
+  ): SavedConnections {
+    return {
+      groups,
+      connections: [...configs].map(([id, config]) => ({ id, group: config.group, config })),
+    };
+  }
+  async function persist(data: SavedConnections) {
+    if (!storageReady.current)
+      throw new Error(
+        '接続設定を読み込めなかったため、保存できません。既存ファイルを確認してください。',
+      );
+    await connectionStore.save(data);
+  }
+  function reportStorageError(error: unknown) {
+    const message =
+      '接続設定の保存に失敗しました: ' + String(error instanceof Error ? error.message : error);
+    setConnectionError(message);
+    log(message, true);
+  }
   // A ref gates operations synchronously, before React updates disabled buttons.
   function beginOperation() {
-    if (operationInFlight.current) return false;
+    if (loading || operationInFlight.current) return false;
     operationInFlight.current = true;
     setBusy(true);
     return true;
@@ -87,25 +142,40 @@ export function useExplorer() {
       next.tables.some((t) => t.id === current) ? current : next.tables[0]?.id || '',
     );
   }
-  function addConnectionGroup(name: string) {
+  async function addConnectionGroup(name: string) {
     const group = name.trim();
-    if (!group) return;
-    setConnectionGroups((current) => (current.includes(group) ? current : [...current, group]));
-  }
-  function moveConnection(id: number, name?: string) {
-    if (operationInFlight.current) return;
-    const group = name?.trim() || undefined;
-    if (group && !connectionGroups.includes(group)) return;
-    if (id === DEMO_CONNECTION_ID) {
-      setDemoGroup(group);
-      return;
+    if (!group || groupsRef.current.includes(group) || !beginOperation()) return;
+    try {
+      const groups = [...groupsRef.current, group];
+      await persist(storedData(connectionConfigs.current, groups));
+      groupsRef.current = groups;
+      setConnectionGroups(groups);
+      setConnectionError('');
+    } catch (error) {
+      reportStorageError(error);
+    } finally {
+      endOperation();
     }
+  }
+  async function moveConnection(id: number, name?: string) {
+    const group = name?.trim() || undefined;
+    if (group && !groupsRef.current.includes(group)) return;
     const config = connectionConfigs.current.get(id);
-    if (!config) return;
-    connectionConfigs.current.set(id, { ...config, group });
-    setConnections((current) =>
-      current.map((entry) => (entry.id === id ? { ...entry, group } : entry)),
-    );
+    if (!config || !beginOperation()) return;
+    try {
+      const configs = new Map(connectionConfigs.current);
+      configs.set(id, { ...config, group });
+      await persist(storedData(configs));
+      connectionConfigs.current = configs;
+      setConnections((current) =>
+        current.map((entry) => (entry.id === id ? { ...entry, group } : entry)),
+      );
+      setConnectionError('');
+    } catch (error) {
+      reportStorageError(error);
+    } finally {
+      endOperation();
+    }
   }
   async function connect(config: ConnectionConfig, existingId?: number) {
     if (!beginOperation()) throw new Error('実行中の操作が完了するまでお待ちください。');
@@ -113,7 +183,10 @@ export function useExplorer() {
       const next = await mysqlGateway.connect(config);
       const id = existingId ?? nextConnectionId.current++;
       const group = config.group?.trim() || undefined;
-      if (group) addConnectionGroup(group);
+      if (group && !groupsRef.current.includes(group)) {
+        groupsRef.current = [...groupsRef.current, group];
+        setConnectionGroups(groupsRef.current);
+      }
       connectionConfigs.current.set(id, { ...config, group });
       if (existingId === undefined) {
         setConnections((current) => [
@@ -138,6 +211,11 @@ export function useExplorer() {
       log(
         `MySQL 接続完了 · ${next.tables.length} tables / ${next.relationships.length} relationships`,
       );
+      try {
+        await persist(storedData());
+      } catch (error) {
+        reportStorageError(error);
+      }
     } finally {
       endOperation();
     }
@@ -156,6 +234,7 @@ export function useExplorer() {
     }
   }
   async function refresh() {
+    if (mode !== 'mysql') return;
     if (!beginOperation()) return;
     invalidatePreview();
     try {
@@ -168,19 +247,18 @@ export function useExplorer() {
       endOperation();
     }
   }
-  async function useDemo() {
+  async function disconnect() {
     if (!beginOperation()) return;
     try {
       await gateway.current.disconnect();
-      gateway.current = demoGateway;
-      setMode('demo');
+      setMode('disconnected');
       setActiveConnectionId(null);
       setConnectionError('');
-      setDatabase('SalesDB');
+      setDatabase('');
       setReadOnly(true);
       setSessionId((value) => value + 1);
-      accept(demoSnapshot);
-      log('デモモードに切り替えました');
+      accept({ tables: [], relationships: [] });
+      log('接続を切断しました');
     } catch (error) {
       log(String(error), true);
     } finally {
@@ -211,6 +289,7 @@ export function useExplorer() {
     }
   }
   async function execute(sql: string, explain = false, executionId?: string) {
+    if (mode !== 'mysql') throw new Error('データベースに接続してください。');
     if (!beginOperation()) throw new Error('実行中の操作が完了するまでお待ちください。');
     try {
       return await gateway.current.execute(sql, explain, executionId);
@@ -227,7 +306,6 @@ export function useExplorer() {
     cancel: async (executionId: string) => {
       await gateway.current.cancel?.(executionId);
     },
-    demoGroup,
     connectionGroups,
     addConnectionGroup,
     moveConnection,
@@ -243,14 +321,14 @@ export function useExplorer() {
     select,
     mode,
     database,
-    busy,
+    busy: busy || loading,
     preview,
     previewBusy,
     previewError,
     logs,
     connect,
     refresh,
-    useDemo,
+    disconnect,
     browse,
     clearLogs: () => setLogs([]),
   };

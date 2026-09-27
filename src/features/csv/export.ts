@@ -75,7 +75,7 @@ export async function openCsvSink(name: string): Promise<CsvSink | null> {
       abort: () => invoke('abort_csv_export', { id }),
     };
   }
-  // Browser demo only: bounded query results, no filesystem completion guarantee.
+  // Browser fallback: bounded query results, no filesystem completion guarantee.
   const parts: BlobPart[] = [];
   return {
     async write(text) {

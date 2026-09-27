@@ -133,7 +133,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
             読み取り専用
           </label>
           <p className="text-xs text-muted-foreground">
-            チェックを外すと更新SQLを実行できます（DBユーザーの権限内）。読み込んだ接続情報をアプリが自動保存することはありません。
+            チェックを外すと更新SQLを実行できます（DBユーザーの権限内）。接続成功後に設定を自動保存します。パスワードは暗号化され、次回起動時に接続一覧を復元します。
           </p>
           {error && (
             <p role="alert" className="error-message">

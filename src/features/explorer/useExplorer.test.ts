@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useExplorer } from './useExplorer';
-import { demoGateway, demoSnapshot } from '@/data/demo';
+import { demoSnapshot } from '../../../tests/fixtures/demo';
+import { connectionStore } from '@/data/connection-store';
 import { mysqlGateway } from '@/data/tauri-gateway';
 import type { Preview, SchemaSnapshot } from '@/domain/database';
 
@@ -12,6 +13,27 @@ function deferred<T>() {
     resolve = done;
   });
   return { promise, resolve };
+}
+beforeEach(() => {
+  vi.spyOn(connectionStore, 'load').mockResolvedValue({ connections: [], groups: [] });
+  vi.spyOn(connectionStore, 'save').mockResolvedValue();
+  vi.spyOn(mysqlGateway, 'refresh').mockResolvedValue(demoSnapshot);
+  vi.spyOn(mysqlGateway, 'disconnect').mockResolvedValue();
+});
+async function readyExplorer() {
+  const hook = renderHook(useExplorer);
+  await waitFor(() => expect(hook.result.current.busy).toBe(false));
+  return hook;
+}
+async function connectedExplorer() {
+  const hook = await readyExplorer();
+  const connect = vi.spyOn(mysqlGateway, 'connect').mockResolvedValueOnce(demoSnapshot);
+  await act(async () => {
+    await hook.result.current.connect(config);
+  });
+  connect.mockClear();
+  act(() => hook.result.current.select('sales.Order'));
+  return hook;
 }
 afterEach(() => {
   cleanup();
@@ -26,25 +48,93 @@ const config = {
 };
 
 describe('explorer request coordination', () => {
-  it('groups the demo connection without creating a MySQL connection or changing its session', () => {
-    const connect = vi.spyOn(mysqlGateway, 'connect');
-    const { result } = renderHook(useExplorer);
-    act(() => result.current.addConnectionGroup('テスト'));
-    act(() => result.current.moveConnection(0, 'テスト'));
-    expect(result.current.demoGroup).toBe('テスト');
-    expect(result.current.mode).toBe('demo');
-    expect(result.current.sessionId).toBe(0);
-    expect(result.current.snapshot).toBe(demoSnapshot);
+  it('restores saved credentials and groups on startup and connects only on selection', async () => {
+    const saved = { ...config, password: 'restored-secret', readOnly: false };
+    vi.mocked(connectionStore.load).mockResolvedValue({
+      groups: ['本番', '空のグループ'],
+      connections: [{ id: 42, group: '本番', config: saved }],
+    });
+    const connect = vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
+    const { result } = await readyExplorer();
+    expect(result.current.activeConnectionId).toBeNull();
     expect(connect).not.toHaveBeenCalled();
-    act(() => result.current.moveConnection(0, 'missing'));
-    expect(result.current.demoGroup).toBe('テスト');
-    act(() => result.current.moveConnection(0));
-    expect(result.current.demoGroup).toBeUndefined();
+    expect(result.current.connectionGroups).toEqual(['本番', '空のグループ']);
+    expect(result.current.connections[0]).not.toHaveProperty('password');
+    await act(async () => {
+      await result.current.selectConnection(42);
+    });
+    expect(connect).toHaveBeenCalledWith({ ...saved, group: '本番' });
+    await act(async () => {
+      await result.current.connect(config);
+    });
+    expect(result.current.activeConnectionId).toBe(43);
+    expect(connectionStore.save).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        connections: expect.arrayContaining([expect.objectContaining({ id: 43 })]),
+      }),
+    );
+  });
+  it('does not overwrite settings after a failed startup read', async () => {
+    vi.mocked(connectionStore.load).mockRejectedValue(new Error('復号できません'));
+    vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
+    const { result } = await readyExplorer();
+    expect(result.current.connectionError).toContain('復号できません');
+    await act(async () => {
+      await result.current.connect(config);
+    });
+    expect(result.current.mode).toBe('mysql');
+    expect(result.current.connectionError).toContain('保存に失敗');
+    expect(connectionStore.save).not.toHaveBeenCalled();
+  });
+  it('reports save failures and keeps group moves uncommitted', async () => {
+    vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
+    const { result } = await readyExplorer();
+    await act(async () => {
+      await result.current.connect(config);
+    });
+    await act(async () => {
+      await result.current.addConnectionGroup('開発');
+    });
+    vi.mocked(connectionStore.save).mockRejectedValue(new Error('disk full'));
+    await act(async () => {
+      await result.current.moveConnection(1, '開発');
+    });
+    expect(result.current.connections[0].group).toBeUndefined();
+    expect(result.current.connectionError).toContain('disk full');
+    expect(result.current.busy).toBe(false);
+  });
+  it('does not save failed connections and blocks changes while loading', async () => {
+    const load = deferred<{ connections: []; groups: [] }>();
+    vi.mocked(connectionStore.load).mockReturnValue(load.promise);
+    const connect = vi.spyOn(mysqlGateway, 'connect').mockRejectedValue(new Error('Access denied'));
+    const { result } = renderHook(useExplorer);
+    await act(async () => {
+      await expect(result.current.connect(config)).rejects.toThrow('実行中');
+    });
+    expect(connect).not.toHaveBeenCalled();
+    await act(async () => {
+      load.resolve({ connections: [], groups: [] });
+    });
+    await act(async () => {
+      await expect(result.current.connect(config)).rejects.toThrow('Access denied');
+    });
+    expect(connectionStore.save).not.toHaveBeenCalled();
+  });
+  it('starts empty without connecting to a sample database', async () => {
+    const connect = vi.spyOn(mysqlGateway, 'connect');
+    const { result } = await readyExplorer();
+    expect(result.current.mode).toBe('disconnected');
+    expect(result.current.snapshot.tables).toEqual([]);
+    expect(result.current.connections).toEqual([]);
+    expect(connect).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.addConnectionGroup('テスト');
+    });
     expect(result.current.connectionGroups).toEqual(['テスト']);
   });
   it('moves connections into and out of groups without reconnecting and retains empty groups', async () => {
     const connect = vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
-    const { result } = renderHook(useExplorer);
+    const { result } = await readyExplorer();
     await act(async () => {
       await result.current.connect({ ...config, group: '本番環境' });
     });
@@ -54,11 +144,13 @@ describe('explorer request coordination', () => {
     });
     const active = result.current.activeConnectionId!;
     const session = result.current.sessionId;
-    act(() => result.current.moveConnection(active, '本番環境'));
+    await act(async () => {
+      await result.current.moveConnection(active, '本番環境');
+    });
     expect(result.current.connections[1].group).toBe('本番環境');
-    act(() => {
-      result.current.moveConnection(first);
-      result.current.moveConnection(active);
+    await act(async () => {
+      await result.current.moveConnection(first);
+      await result.current.moveConnection(active);
     });
     expect(result.current.connections.every((entry) => !entry.group)).toBe(true);
     expect(result.current.connectionGroups).toEqual(['本番環境']);
@@ -74,7 +166,7 @@ describe('explorer request coordination', () => {
   it('retains grouped and ungrouped connections and reconnects without duplicating entries', async () => {
     const connect = vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
     vi.spyOn(mysqlGateway, 'disconnect').mockResolvedValue();
-    const { result } = renderHook(useExplorer);
+    const { result } = await readyExplorer();
     await act(async () => {
       await result.current.connect({ ...config, group: ' 本番環境 ', readOnly: false });
     });
@@ -99,7 +191,7 @@ describe('explorer request coordination', () => {
     expect(result.current.activeConnectionId).toBe(first);
     expect(result.current.readOnly).toBe(false);
     await act(async () => {
-      await result.current.useDemo();
+      await result.current.disconnect();
     });
     expect(result.current.activeConnectionId).toBeNull();
     expect(result.current.connections).toHaveLength(3);
@@ -111,7 +203,7 @@ describe('explorer request coordination', () => {
 
   it('preserves the active connection when switching to another connection fails', async () => {
     const connect = vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
-    const { result } = renderHook(useExplorer);
+    const { result } = await readyExplorer();
     await act(async () => {
       await result.current.connect(config);
     });
@@ -134,7 +226,7 @@ describe('explorer request coordination', () => {
       .mockResolvedValueOnce(demoSnapshot)
       .mockRejectedValueOnce(new Error('failed'));
     vi.spyOn(mysqlGateway, 'disconnect').mockResolvedValue();
-    const { result } = renderHook(useExplorer);
+    const { result } = await readyExplorer();
     await act(async () => {
       await result.current.connect({ ...config, readOnly: false });
     });
@@ -146,20 +238,20 @@ describe('explorer request coordination', () => {
     expect(result.current.readOnly).toBe(false);
     expect(result.current.sessionId).toBe(sessionId);
     await act(async () => {
-      await result.current.useDemo();
+      await result.current.disconnect();
     });
     expect(result.current.readOnly).toBe(true);
     expect(result.current.sessionId).toBeGreaterThan(sessionId);
   });
   it('blocks reconnect and refresh while SQL runs and releases the lock on error', async () => {
     let reject!: (error: Error) => void;
-    vi.spyOn(demoGateway, 'execute').mockReturnValue(
+    vi.spyOn(mysqlGateway, 'execute').mockReturnValue(
       new Promise((_, fail) => {
         reject = fail;
       }),
     );
-    const refresh = vi.spyOn(demoGateway, 'refresh');
-    const { result } = renderHook(useExplorer);
+    const refresh = vi.spyOn(mysqlGateway, 'refresh');
+    const { result } = await connectedExplorer();
     let pending!: Promise<unknown>;
     act(() => {
       pending = result.current.execute('SELECT 1').catch((error) => error);
@@ -181,11 +273,11 @@ describe('explorer request coordination', () => {
     const customer = { columns: ['customer_id'], rows: [['7']] };
     const updatedOrder = { columns: ['order_id'], rows: [['1053']] };
     const fetchPreview = vi
-      .spyOn(demoGateway, 'preview')
+      .spyOn(mysqlGateway, 'preview')
       .mockResolvedValueOnce(order)
       .mockResolvedValueOnce(customer)
       .mockResolvedValueOnce(updatedOrder);
-    const { result } = renderHook(useExplorer);
+    const { result } = await connectedExplorer();
     await act(async () => {
       await result.current.browse();
     });
@@ -211,8 +303,8 @@ describe('explorer request coordination', () => {
 
   it('also retains successful empty previews', async () => {
     const empty = { columns: ['order_id'], rows: [] };
-    vi.spyOn(demoGateway, 'preview').mockResolvedValue(empty);
-    const { result } = renderHook(useExplorer);
+    vi.spyOn(mysqlGateway, 'preview').mockResolvedValue(empty);
+    const { result } = await connectedExplorer();
     await act(async () => {
       await result.current.browse();
     });
@@ -221,15 +313,15 @@ describe('explorer request coordination', () => {
     expect(result.current.preview).toBe(empty);
   });
 
-  it.each(['refresh', 'connect', 'useDemo'] as const)(
+  it.each(['refresh', 'connect', 'disconnect'] as const)(
     'clears cached previews after %s succeeds',
     async (operation) => {
       vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
-      vi.spyOn(demoGateway, 'preview').mockResolvedValue({
+      vi.spyOn(mysqlGateway, 'preview').mockResolvedValue({
         columns: ['order_id'],
         rows: [['1052']],
       });
-      const { result } = renderHook(useExplorer);
+      const { result } = await connectedExplorer();
       await act(async () => {
         await result.current.browse();
       });
@@ -245,9 +337,9 @@ describe('explorer request coordination', () => {
 
   it('retains cached previews when a connection attempt fails', async () => {
     const cached = { columns: ['order_id'], rows: [['1052']] };
-    vi.spyOn(demoGateway, 'preview').mockResolvedValue(cached);
+    vi.spyOn(mysqlGateway, 'preview').mockResolvedValue(cached);
     vi.spyOn(mysqlGateway, 'connect').mockRejectedValue(new Error('Access denied'));
-    const { result } = renderHook(useExplorer);
+    const { result } = await connectedExplorer();
     await act(async () => {
       await result.current.browse();
     });
@@ -261,8 +353,8 @@ describe('explorer request coordination', () => {
 
   it('discards a delayed preview after selecting a different table', async () => {
     const response = deferred<Preview>();
-    vi.spyOn(demoGateway, 'preview').mockReturnValue(response.promise);
-    const { result } = renderHook(useExplorer);
+    vi.spyOn(mysqlGateway, 'preview').mockReturnValue(response.promise);
+    const { result } = await connectedExplorer();
     let pending!: Promise<void>;
     act(() => {
       pending = result.current.browse();
@@ -283,20 +375,20 @@ describe('explorer request coordination', () => {
 
   it('preserves the current snapshot on a failed connection', async () => {
     vi.spyOn(mysqlGateway, 'connect').mockRejectedValue(new Error('Access denied'));
-    const { result } = renderHook(useExplorer);
+    const { result } = await readyExplorer();
     await act(async () => {
       await expect(result.current.connect(config)).rejects.toThrow('Access denied');
     });
-    expect(result.current.mode).toBe('demo');
-    expect(result.current.snapshot).toBe(demoSnapshot);
+    expect(result.current.mode).toBe('disconnected');
+    expect(result.current.snapshot).toEqual({ tables: [], relationships: [] });
     expect(result.current.busy).toBe(false);
   });
 
   it('serializes schema operations even before disabled buttons render', async () => {
     const response = deferred<SchemaSnapshot>();
     const connect = vi.spyOn(mysqlGateway, 'connect').mockReturnValue(response.promise);
-    const refresh = vi.spyOn(demoGateway, 'refresh');
-    const { result } = renderHook(useExplorer);
+    const refresh = vi.spyOn(mysqlGateway, 'refresh');
+    const { result } = await readyExplorer();
     let pending!: Promise<void>;
     act(() => {
       pending = result.current.connect(config);

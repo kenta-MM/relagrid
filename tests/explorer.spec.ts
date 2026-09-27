@@ -1,8 +1,9 @@
+import { openFixture } from './helpers/connection-fixture';
 import { test, expect } from '@playwright/test';
 test('explores a table, searches columns, and previews data', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
+  await openFixture(page);
   await expect(page.locator('.graph-area')).toBeVisible();
   await expect(page.locator('.react-flow__node')).toHaveCount(7);
   await page.keyboard.press('/');
@@ -46,7 +47,7 @@ test('explores a table, searches columns, and previews data', async ({ page }) =
   await page.screenshot({ path: 'test-results/explorer.png', fullPage: true });
   expect(errors).toEqual([]);
 });
-test('connection dialog explains desktop requirement without losing demo data', async ({
+test('connection dialog explains desktop requirement while keeping the disconnected workspace empty', async ({
   page,
 }) => {
   await page.goto('/');
@@ -55,5 +56,5 @@ test('connection dialog explains desktop requirement without losing demo data', 
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
   await expect(page.getByRole('alert')).toContainText('デスクトップ版');
   await page.getByRole('button', { name: '閉じる', exact: true }).click();
-  await expect(page.locator('.react-flow__node')).toHaveCount(7);
+  await expect(page.locator('.react-flow__node')).toHaveCount(0);
 });

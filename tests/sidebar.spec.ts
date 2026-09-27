@@ -1,7 +1,8 @@
+import { openFixture } from './helpers/connection-fixture';
 import { test, expect } from '@playwright/test';
 
 test('Ctrl+B preserves the sidebar tree and expands both workspaces', async ({ page }) => {
-  await page.goto('/');
+  await openFixture(page);
   const sidebar = page.locator('.sidebar');
   const schema = sidebar.locator('.schema-tree details');
   await schema.locator('summary').click();

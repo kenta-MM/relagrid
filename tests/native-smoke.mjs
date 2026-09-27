@@ -30,12 +30,8 @@ try {
   await page.getByRole('button', { name: '更新', exact: true }).click();
   await expect(page.getByRole('button', { name: '更新', exact: true })).toBeEnabled();
   await expect(page.locator('.react-flow__node')).toHaveCount(2);
-  await page.getByRole('button', { name: 'デモに切り替え・切断' }).click();
-  await expect(page.locator('.react-flow__node')).toHaveCount(7);
-  await page
-    .locator('.tree-table')
-    .filter({ hasText: /^Order$/ })
-    .click();
+  await page.getByRole('button', { name: '切断', exact: true }).click();
+  await expect(page.locator('.react-flow__node')).toHaveCount(0);
   await page.getByRole('tab', { name: 'アクティビティ', exact: true }).click();
   await page.getByRole('button', { name: '全体表示', exact: true }).click();
   await page.screenshot({ path: 'test-results/desktop.png' });

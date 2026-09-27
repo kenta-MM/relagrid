@@ -8,6 +8,8 @@ test('groups added connections, collapses groups and switches the active databas
       isTauri: true,
       __TAURI_INTERNALS__: {
         invoke: async (command: string, args: { config?: { database: string } }) => {
+          if (command === 'load_connections') return { connections: [], groups: [] };
+          if (command === 'save_connections') return;
           if (command === 'disconnect_database') return;
           const database = args.config?.database ?? 'sales';
           return {

@@ -14,7 +14,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { GroupDialog } from '@/features/connection/GroupDialog';
 import type { ConnectionEntry, SchemaSnapshot } from '@/domain/database';
-import { DEMO_CONNECTION_ID } from '@/domain/database';
 interface Props {
   hidden?: boolean;
   snapshot: SchemaSnapshot;
@@ -23,10 +22,8 @@ interface Props {
   onQueryChange(query: string): void;
   searchInputRef: RefObject<HTMLInputElement | null>;
   onRefresh(): void;
-  database: string;
   connections: ConnectionEntry[];
   connectionGroups: string[];
-  demoGroup?: string;
   onAddGroup(name: string): void;
   onMoveConnection(id: number, group?: string): void;
   activeConnectionId: number | null;
@@ -37,7 +34,7 @@ interface Props {
   readOnly: boolean;
   onSelect(id: string): void;
   onConnect(): void;
-  onDemo(): void;
+  onDisconnect(): void;
 }
 export function Sidebar({
   hidden,
@@ -47,10 +44,8 @@ export function Sidebar({
   onQueryChange,
   searchInputRef,
   onRefresh,
-  database,
   connections,
   connectionGroups,
-  demoGroup,
   onAddGroup,
   onMoveConnection,
   activeConnectionId,
@@ -61,7 +56,7 @@ export function Sidebar({
   readOnly,
   onSelect,
   onConnect,
-  onDemo,
+  onDisconnect,
 }: Props) {
   const shortcuts = useShortcuts();
   const [groupOpen, setGroupOpen] = useState(false);
@@ -109,10 +104,7 @@ export function Sidebar({
   );
   const schemas = [...new Set(tables.map((table) => table.schema))];
   const groups = new Map<string, ConnectionEntry[]>(connectionGroups.map((group) => [group, []]));
-  const visibleConnections: ConnectionEntry[] =
-    mode === 'demo'
-      ? [{ id: DEMO_CONNECTION_ID, database, group: demoGroup, host: '', port: 0 }, ...connections]
-      : connections;
+  const visibleConnections = connections;
   for (const connection of visibleConnections) {
     if (!connection.group) continue;
     const entries = groups.get(connection.group) ?? [];
@@ -120,8 +112,7 @@ export function Sidebar({
     groups.set(connection.group, entries);
   }
   function connectionItem(connection: ConnectionEntry) {
-    const demo = connection.id === DEMO_CONNECTION_ID;
-    const active = demo ? mode === 'demo' : connection.id === activeConnectionId;
+    const active = connection.id === activeConnectionId;
     return (
       <button
         key={connection.id}
@@ -141,15 +132,11 @@ export function Sidebar({
         onClick={() => onSelectConnection(connection.id)}
         disabled={busy}
         aria-pressed={active}
-        title={
-          demo
-            ? 'サンプルデータ · 接続不要'
-            : `${connection.database} · ${connection.host}:${connection.port}`
-        }
+        title={`${connection.database} · ${connection.host}:${connection.port}`}
       >
         <Database size={17} />
         <strong>{connection.database}</strong>
-        {active && <span className={`status-dot ${demo ? 'demo' : ''}`} />}
+        {active && <span className="status-dot" />}
       </button>
     );
   }
@@ -190,6 +177,7 @@ export function Sidebar({
             variant="ghost"
             size="icon"
             onClick={() => setGroupOpen(true)}
+            disabled={busy}
             aria-label="グループを追加"
             title="グループを追加"
           >
@@ -240,8 +228,8 @@ export function Sidebar({
         </p>
       )}
       <div className="connection-caption">
-        {mode === 'demo'
-          ? 'サンプルデータ · 接続不要'
+        {mode === 'disconnected'
+          ? '接続を追加または選択してください'
           : `MySQL · ${readOnly ? '読み取り専用' : '読み書き可能'}`}
       </div>
       <div className="section-label schemas-label">
@@ -254,7 +242,7 @@ export function Sidebar({
             variant="ghost"
             size="icon"
             onClick={onRefresh}
-            disabled={busy}
+            disabled={busy || mode !== 'mysql'}
             aria-label="更新"
             title="スキーマを更新"
           >
@@ -294,9 +282,9 @@ export function Sidebar({
         )}
       </nav>
       <div className="sidebar-bottom">
-        {mode !== 'demo' && (
-          <Button variant="ghost" className="w-full mt-3" disabled={busy} onClick={onDemo}>
-            デモに切り替え・切断
+        {mode === 'mysql' && (
+          <Button variant="ghost" className="w-full mt-3" disabled={busy} onClick={onDisconnect}>
+            切断
           </Button>
         )}
         <div className="sidebar-version">

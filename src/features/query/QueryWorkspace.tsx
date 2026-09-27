@@ -134,7 +134,11 @@ export function QueryWorkspace({
   const inFlight = useRef(false);
   function initialSql() {
     const table = tables.find((t) => t.id === selected) ?? tables[0];
-    return table ? `SELECT * FROM \`${table.name.replaceAll('`', '``')}\` LIMIT 100;` : 'SELECT 1;';
+    return table
+      ? `SELECT * FROM \`${table.name.replaceAll('`', '``')}\` LIMIT 100;`
+      : connectionId === 0
+        ? ''
+        : 'SELECT 1;';
   }
   function createTab(id: number, sql: string): QueryTab {
     return {
@@ -156,6 +160,15 @@ export function QueryWorkspace({
   useEffect(() => {
     if (previousConnection.current === connectionId) return;
     previousConnection.current = connectionId;
+    if (
+      connectionId !== 0 &&
+      tabs.length === 1 &&
+      tabs[0].connectionId === 0 &&
+      !tabs[0].sql.trim()
+    ) {
+      setTabs([createTab(tabs[0].id, initialSql())]);
+      return;
+    }
     const existing = tabs.find((tab) => tab.connectionId === connectionId);
     if (existing) setTabId(existing.id);
     else add();
@@ -246,7 +259,11 @@ export function QueryWorkspace({
     updateView({ size, page: 0, top: 0, left: 0 });
   }
   const canRun =
-    !busy && !inFlight.current && current.connectionId === connectionId && !!current.sql.trim();
+    connectionId !== 0 &&
+    !busy &&
+    !inFlight.current &&
+    current.connectionId === connectionId &&
+    !!current.sql.trim();
   function setResultTab(resultTab: string) {
     update(tabId, { resultTab });
   }
@@ -473,8 +490,7 @@ export function QueryWorkspace({
           </div>
           <div className="editor-meta">
             <span>
-              {current.connectionLabel} ·{' '}
-              {current.connectionId === 0 ? 'DEMO · サンプルSELECTのみ' : 'MySQL'} ·{' '}
+              {current.connectionLabel} · {current.connectionId === 0 ? '未接続' : 'MySQL'} ·{' '}
               {current.readOnly ? '読み取り専用' : '読み書き可能'}
               {current.connectionId !== connectionId &&
                 ' · 実行するにはサイドバーでこの接続を選択してください'}
