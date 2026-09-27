@@ -1,0 +1,6 @@
+{
+    // copilot inline 候補を無効にする
+    "github.copilot.enable" :{
+        "*": false, 
+    }
+}
