@@ -119,7 +119,7 @@ export function App() {
         title="リレーション（Ctrl+1）"
         onClick={() => setScreen('relations')}
       >
-        <GitBranch size={17} />
+        <GitBranch size={14} />
         リレーション
       </button>
       <button
@@ -128,7 +128,7 @@ export function App() {
         title="SQL（Ctrl+2）"
         onClick={() => setScreen('sql')}
       >
-        <Database size={17} />
+        <Database size={14} />
         SQL
       </button>
     </nav>

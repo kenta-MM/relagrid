@@ -6,7 +6,7 @@
   overflow: hidden;
 }
 .window-header {
-  height: 46px;
+  height: 32px;
   flex-shrink: 0;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -18,9 +18,9 @@
 .window-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   padding-left: 8px;
-  font-size: 16px;
+  font-size: 13px;
   align-self: stretch;
 }
 .window-brand svg {
@@ -33,7 +33,7 @@
 }
 .view-switch {
   display: flex;
-  height: 40px;
+  height: 26px;
   border: 1px solid #2e3b50;
   border-radius: 6px;
   background: #121c2a;
@@ -42,14 +42,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-width: 110px;
-  padding: 0 24px;
+  gap: 6px;
+  min-width: 80px;
+  padding: 0 14px;
   border: 1px solid transparent;
   border-bottom: 2px solid transparent;
   border-radius: 5px 5px 0 0;
   color: #9aafcc;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
 }
 .view-switch button[aria-pressed='true'] {
@@ -60,6 +60,9 @@
 }
 .view-switch button[aria-pressed='true'] svg {
   color: #b881f3;
+}
+.window-header button:focus-visible {
+  outline-offset: -2px;
 }
 .window-controls {
   display: flex;
