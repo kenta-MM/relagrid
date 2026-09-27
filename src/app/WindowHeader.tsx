@@ -1,3 +1,4 @@
+import { SettingsMenu } from './SettingsMenu';
 import type { ReactNode } from 'react';
 import { Box, Minus, Square, X } from 'lucide-react';
 import { isTauri } from '@tauri-apps/api/core';
@@ -18,6 +19,7 @@ export function WindowHeader({ children }: { children: ReactNode }) {
     <header className="window-header" data-tauri-drag-region>
       <div className="window-brand" data-tauri-drag-region>
         <Box size={18} />
+        <SettingsMenu />
       </div>
       {children}
       <div className="window-controls">

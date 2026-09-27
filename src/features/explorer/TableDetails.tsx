@@ -1,3 +1,4 @@
+import { useShortcuts, shortcutAria } from '@/lib/shortcut-settings';
 import { ArrowDownLeft, ArrowUpRight, KeyRound, Table2, Network, Rows3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -20,9 +21,10 @@ export function TableDetails({
   onBrowse,
   onToggleRelated,
 }: Props) {
+  const shortcuts = useShortcuts();
   if (!table)
     return (
-      <aside className="details-panel" aria-keyshortcuts="Control+Alt+b Meta+Alt+b">
+      <aside className="details-panel" aria-keyshortcuts={shortcutAria(shortcuts.inspector)}>
         <h2>テーブル詳細</h2>
         <p className="muted">テーブルを選択してください。</p>
       </aside>
@@ -47,7 +49,7 @@ export function TableDetails({
       );
     });
   return (
-    <aside className="details-panel" aria-keyshortcuts="Control+Alt+b Meta+Alt+b">
+    <aside className="details-panel" aria-keyshortcuts={shortcutAria(shortcuts.inspector)}>
       <div className="details-title">
         <h2>テーブル詳細</h2>
         <span className="tiny-label">INSPECTOR</span>

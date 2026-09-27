@@ -1,3 +1,9 @@
+import {
+  useShortcuts,
+  matchesShortcut,
+  shortcutLabel,
+  shortcutAria,
+} from '@/lib/shortcut-settings';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Copy, Download, Play, Plus, Save, Table2, X, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -123,6 +129,7 @@ export function QueryWorkspace({
   execute,
   cancel,
 }: Props) {
+  const shortcuts = useShortcuts();
   const nextId = useRef(2);
   const inFlight = useRef(false);
   function initialSql() {
@@ -177,36 +184,30 @@ export function QueryWorkspace({
     function handleKey(event: KeyboardEvent) {
       const target = shortcutTarget(event);
       if (!active || !target?.closest('.query-workspace')) return;
-      const mod = event.ctrlKey || event.metaKey;
-      const key = event.key.toLowerCase();
       let action: (() => void) | undefined;
-      if (mod && !event.altKey && !event.shiftKey && key === 't') action = () => add();
-      else if (mod && !event.altKey && !event.shiftKey && key === 'w')
-        action = () => closeEditor(tabId);
-      else if (mod && !event.altKey && key === 'tab')
+      const matches = (id: keyof typeof shortcuts) => matchesShortcut(event, shortcuts[id]);
+      if (matches('newQuery')) action = () => add();
+      else if (matches('closeQuery')) action = () => closeEditor(tabId);
+      else if (matches('nextQuery') || matches('previousQuery'))
         action = () => {
           const index = tabs.findIndex((tab) => tab.id === tabId);
-          selectEditor(tabs[(index + (event.shiftKey ? -1 : 1) + tabs.length) % tabs.length].id);
+          selectEditor(
+            tabs[(index + (matches('previousQuery') ? -1 : 1) + tabs.length) % tabs.length].id,
+          );
         };
+      else if (matches('run') || matches('runAlternate')) action = () => void run();
+      else if (matches('stop')) action = () => void stop();
       else if (
-        (!mod && !event.altKey && key === 'f5') ||
-        (mod && !event.altKey && !event.shiftKey && key === 'enter')
-      ) {
-        action = event.shiftKey ? () => void stop() : () => void run();
-      } else if (
-        event.altKey &&
-        !mod &&
-        !event.shiftKey &&
         target.closest('.sql-results') &&
-        (key === 'arrowleft' || key === 'arrowright')
-      ) {
+        (matches('previousResult') || matches('nextResult'))
+      )
         action = () => {
           if (resultTab !== 'result' || sets.length < 2) return;
           update(tabId, {
-            resultIndex: (resultIndex + (key === 'arrowleft' ? -1 : 1) + sets.length) % sets.length,
+            resultIndex:
+              (resultIndex + (matches('previousResult') ? -1 : 1) + sets.length) % sets.length,
           });
         };
-      }
       if (action) claimShortcut(event, action);
     }
     window.addEventListener('keydown', handleKey, true);
@@ -379,8 +380,13 @@ export function QueryWorkspace({
               className="query-tabs"
               role="tablist"
               aria-label="クエリ"
-              title="Ctrl+Tab: 次のエディタ / Ctrl+Shift+Tab: 前のエディタ"
-              aria-keyshortcuts="Control+Tab Control+Shift+Tab"
+              title={`${shortcutLabel(shortcuts.nextQuery)}: 次のエディタ / ${shortcutLabel(shortcuts.previousQuery)}: 前のエディタ`}
+              aria-keyshortcuts={[
+                shortcutAria(shortcuts.nextQuery),
+                shortcutAria(shortcuts.previousQuery),
+              ]
+                .filter(Boolean)
+                .join(' ')}
             >
               {tabs.map((tab) => (
                 <div className={`query-tab ${tab.id === tabId ? 'active' : ''}`} key={tab.id}>
@@ -401,8 +407,8 @@ export function QueryWorkspace({
                   {tabs.length > 1 && (
                     <button
                       aria-label={`${tab.name}を閉じる`}
-                      title="閉じる（Ctrl+W）"
-                      aria-keyshortcuts="Control+w"
+                      title={`閉じる（${shortcutLabel(shortcuts.closeQuery)}）`}
+                      aria-keyshortcuts={shortcutAria(shortcuts.closeQuery)}
                       disabled={!!tab.executionId}
                       onClick={() => closeEditor(tab.id)}
                     >
@@ -415,8 +421,8 @@ export function QueryWorkspace({
                 variant="ghost"
                 size="icon"
                 aria-label="新規クエリ"
-                title="新規クエリ（Ctrl+T）"
-                aria-keyshortcuts="Control+t"
+                title={`新規クエリ（${shortcutLabel(shortcuts.newQuery)}）`}
+                aria-keyshortcuts={shortcutAria(shortcuts.newQuery)}
                 onClick={() => add()}
               >
                 <Plus size={18} />
@@ -439,8 +445,13 @@ export function QueryWorkspace({
               <Button
                 size="sm"
                 disabled={!canRun}
-                title="SQL全文を実行（F5 / Ctrl+Enter）。選択範囲があっても全文を実行します。"
-                aria-keyshortcuts="F5 Control+Enter"
+                title={`SQL全文を実行（${shortcutLabel(shortcuts.run)} / ${shortcutLabel(shortcuts.runAlternate)}）。選択範囲があっても全文を実行します。`}
+                aria-keyshortcuts={[
+                  shortcutAria(shortcuts.run),
+                  shortcutAria(shortcuts.runAlternate),
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
                 onClick={() => void run()}
               >
                 <Play size={14} />
@@ -451,8 +462,8 @@ export function QueryWorkspace({
                   variant="outline"
                   size="sm"
                   disabled={current.cancelling}
-                  title="このエディタの実行を中断（Shift+F5）"
-                  aria-keyshortcuts="Shift+F5"
+                  title={`このエディタの実行を中断（${shortcutLabel(shortcuts.stop)}）`}
+                  aria-keyshortcuts={shortcutAria(shortcuts.stop)}
                   onClick={() => void stop()}
                 >
                   {current.cancelling ? '中断待ち…' : '中断'}
@@ -469,8 +480,9 @@ export function QueryWorkspace({
                 ' · 実行するにはサイドバーでこの接続を選択してください'}
               {busy && !current.executionId && ' · 他の操作が完了するまで実行できません'}
             </span>
-            <span title="Ctrl+T: 新規 / Ctrl+W: 終了 / Ctrl+Tab・Ctrl+Shift+Tab: エディタ移動 / F5・Ctrl+Enter: 全文実行 / Shift+F5: 中断 / Ctrl+1: リレーション / Ctrl+2: SQL / 結果内でAlt+←・→: 結果切り替え">
-              Tab で補完 · F5 / Ctrl+Enter で全文実行（選択範囲に関係なく）
+            <span>
+              Tab で補完 · {shortcutLabel(shortcuts.run)} / {shortcutLabel(shortcuts.runAlternate)}{' '}
+              で全文実行（選択範囲に関係なく）
             </span>
           </div>
           <SqlEditor
@@ -490,8 +502,13 @@ export function QueryWorkspace({
           className="sql-results"
           aria-label="クエリ実行結果"
           tabIndex={0}
-          title="結果内でAlt+← / Alt+→: 前 / 次の結果"
-          aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+          title={`前の結果: ${shortcutLabel(shortcuts.previousResult)} / 次の結果: ${shortcutLabel(shortcuts.nextResult)}`}
+          aria-keyshortcuts={[
+            shortcutAria(shortcuts.previousResult),
+            shortcutAria(shortcuts.nextResult),
+          ]
+            .filter(Boolean)
+            .join(' ')}
         >
           <div className="result-toolbar">
             <div role="tablist" aria-label="実行結果の表示">
@@ -628,7 +645,10 @@ export function QueryWorkspace({
           </div>
         </section>
       </main>
-      <aside className="details-panel query-inspector" aria-keyshortcuts="Control+Alt+b Meta+Alt+b">
+      <aside
+        className="details-panel query-inspector"
+        aria-keyshortcuts={shortcutAria(shortcuts.inspector)}
+      >
         <div className="details-title">
           <h2>クエリ詳細</h2>
           <span className="tiny-label">INSPECTOR</span>

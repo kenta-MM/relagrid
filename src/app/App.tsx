@@ -1,3 +1,9 @@
+import {
+  useShortcuts,
+  matchesShortcut,
+  shortcutLabel,
+  shortcutAria,
+} from '@/lib/shortcut-settings';
 import { useEffect, useRef, useState } from 'react';
 import { GitBranch, ShieldCheck, Database } from 'lucide-react';
 import { WindowHeader } from './WindowHeader';
@@ -10,19 +16,16 @@ import { useExplorer } from '@/features/explorer/useExplorer';
 import { QueryWorkspace } from '@/features/query/QueryWorkspace';
 import { claimShortcut, shortcutTarget } from '@/lib/shortcuts';
 export function App() {
+  const shortcuts = useShortcuts();
   const searchInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     function focusSearch(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       if (
-        event.key !== '/' ||
-        event.isComposing ||
-        event.keyCode === 229 ||
+        !shortcutTarget(event) ||
+        !matchesShortcut(event, shortcuts.search) ||
         event.repeat ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        target?.closest('input, textarea, [contenteditable="true"], [role="dialog"]')
+        target?.closest('input, textarea, [contenteditable="true"]')
       )
         return;
       event.preventDefault();
@@ -31,7 +34,7 @@ export function App() {
     }
     window.addEventListener('keydown', focusSearch);
     return () => window.removeEventListener('keydown', focusSearch);
-  }, []);
+  }, [shortcuts]);
   const explorer = useExplorer();
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -42,15 +45,13 @@ export function App() {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   useEffect(() => {
     function togglePanel(event: KeyboardEvent) {
-      if (
-        !shortcutTarget(event) ||
-        !(event.ctrlKey || event.metaKey) ||
-        event.shiftKey ||
-        event.key.toLowerCase() !== 'b'
-      )
-        return;
+      if (!shortcutTarget(event)) return;
+      const open = matchesShortcut(event, shortcuts.sidebarOpen);
+      const close = matchesShortcut(event, shortcuts.sidebarClose);
+      const inspector = matchesShortcut(event, shortcuts.inspector);
+      if (!open && !close && !inspector) return;
       claimShortcut(event, () => {
-        if (document.activeElement?.closest(event.altKey ? '.details-panel' : '.sidebar')) {
+        if (document.activeElement?.closest(inspector ? '.details-panel' : '.sidebar')) {
           document
             .querySelector<HTMLElement>(
               screen === 'sql'
@@ -59,42 +60,35 @@ export function App() {
             )
             ?.focus();
         }
-        if (event.altKey) setInspectorOpen((open) => !open);
-        else setSidebarOpen((open) => !open);
+        if (inspector) setInspectorOpen((open) => !open);
+        else setSidebarOpen((previous) => (open && close ? !previous : open));
       });
     }
     window.addEventListener('keydown', togglePanel, true);
     return () => window.removeEventListener('keydown', togglePanel, true);
-  }, [screen]);
+  }, [screen, shortcuts]);
   const modeFocus = useRef(false);
   useEffect(() => {
     function switchMode(event: KeyboardEvent) {
-      if (
-        !shortcutTarget(event) ||
-        !(event.ctrlKey || event.metaKey) ||
-        event.altKey ||
-        !(
-          (!event.shiftKey && (event.key === '1' || event.key === '2')) ||
-          (event.shiftKey && event.key.toLowerCase() === 'm')
-        )
-      )
-        return;
+      if (!shortcutTarget(event)) return;
+      const relations = matchesShortcut(event, shortcuts.relations);
+      const sql = matchesShortcut(event, shortcuts.sql);
+      if (!relations && !sql && !matchesShortcut(event, shortcuts.switchMode)) return;
       claimShortcut(event, () => {
-        const nextScreen =
-          event.key === '1'
-            ? 'relations'
-            : event.key === '2'
-              ? 'sql'
-              : screen === 'sql'
-                ? 'relations'
-                : 'sql';
+        const nextScreen = relations
+          ? 'relations'
+          : sql
+            ? 'sql'
+            : screen === 'sql'
+              ? 'relations'
+              : 'sql';
         modeFocus.current = nextScreen !== screen;
         setScreen(nextScreen);
       });
     }
     window.addEventListener('keydown', switchMode, true);
     return () => window.removeEventListener('keydown', switchMode, true);
-  }, [screen]);
+  }, [screen, shortcuts]);
   useEffect(() => {
     if (!modeFocus.current) return;
     modeFocus.current = false;
@@ -110,13 +104,13 @@ export function App() {
     <nav
       className="view-switch"
       aria-label="画面切り替え"
-      title="Ctrl+1: リレーション / Ctrl+2: SQL"
-      aria-keyshortcuts="Control+Shift+m"
+      title={`${shortcutLabel(shortcuts.relations)}: リレーション / ${shortcutLabel(shortcuts.sql)}: SQL`}
+      aria-keyshortcuts={shortcutAria(shortcuts.switchMode)}
     >
       <button
         aria-pressed={screen === 'relations'}
-        aria-keyshortcuts="Control+1"
-        title="リレーション（Ctrl+1）"
+        aria-keyshortcuts={shortcutAria(shortcuts.relations)}
+        title={`リレーション（${shortcutLabel(shortcuts.relations)}）`}
         onClick={() => setScreen('relations')}
       >
         <GitBranch size={14} />
@@ -124,8 +118,8 @@ export function App() {
       </button>
       <button
         aria-pressed={screen === 'sql'}
-        aria-keyshortcuts="Control+2"
-        title="SQL（Ctrl+2）"
+        aria-keyshortcuts={shortcutAria(shortcuts.sql)}
+        title={`SQL（${shortcutLabel(shortcuts.sql)}）`}
         onClick={() => setScreen('sql')}
       >
         <Database size={14} />

@@ -151,3 +151,74 @@
   padding: 0 8px;
   color: #38445b;
 }
+
+.window-brand > .settings-menu {
+  pointer-events: auto;
+}
+.settings-menu {
+  position: relative;
+  font-size: 12px;
+}
+.settings-menu > button {
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+.settings-menu button:hover {
+  background: #7952e733;
+}
+.settings-options {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  width: 180px;
+  padding: 5px;
+  z-index: 40;
+  border: 1px solid #35435a;
+  border-radius: 6px;
+  background: #171e2b;
+  box-shadow: 0 8px 24px #0008;
+}
+.settings-options button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  text-align: left;
+  border-radius: 4px;
+}
+.settings-dialog {
+  max-width: 720px;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+}
+.shortcut-list {
+  margin: 16px 0;
+}
+.shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 1fr) 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #293141;
+  font-size: 13px;
+}
+.shortcut-row input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid #35435a;
+  border-radius: 5px;
+  background: #101724;
+}
+.shortcut-row input:focus {
+  outline: 2px solid #a96af1;
+}
+.shortcut-row button {
+  color: #aabbd2;
+  font-size: 12px;
+}
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

@@ -1,3 +1,4 @@
+import { useShortcuts, shortcutAria, shortcutLabel } from '@/lib/shortcut-settings';
 import { useRef, useState, type RefObject, type DragEvent } from 'react';
 import {
   ChevronDown,
@@ -62,6 +63,7 @@ export function Sidebar({
   onConnect,
   onDemo,
 }: Props) {
+  const shortcuts = useShortcuts();
   const [groupOpen, setGroupOpen] = useState(false);
   const draggedId = useRef<number | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -152,24 +154,32 @@ export function Sidebar({
     );
   }
   return (
-    <aside className="sidebar" hidden={hidden} aria-keyshortcuts="Control+b Meta+b">
+    <aside
+      className="sidebar"
+      hidden={hidden}
+      aria-keyshortcuts={[shortcutAria(shortcuts.sidebarOpen), shortcutAria(shortcuts.sidebarClose)]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <div className="sidebar-search">
         <Search size={15} />
         <input
           ref={searchInputRef}
-          aria-keyshortcuts="/"
+          aria-keyshortcuts={shortcutAria(shortcuts.search)}
           aria-label="テーブル・カラムを検索"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="テーブル・カラムを検索…"
-          title="テーブル名・カラム名で検索（/）"
+          title={`テーブル名・カラム名で検索（${shortcutLabel(shortcuts.search)}）`}
         />
         {query && (
           <button aria-label="検索をクリア" onClick={() => onQueryChange('')}>
             ×
           </button>
         )}
-        <span>/</span>
+        <span title={shortcutLabel(shortcuts.search)}>
+          {shortcuts.search ? shortcutLabel(shortcuts.search) : ''}
+        </span>
       </div>
       <div className="section-label">
         <span>
