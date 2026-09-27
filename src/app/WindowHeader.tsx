@@ -18,7 +18,6 @@ export function WindowHeader({ children }: { children: ReactNode }) {
     <header className="window-header" data-tauri-drag-region>
       <div className="window-brand" data-tauri-drag-region>
         <Box size={18} />
-        <span>RelaGrid</span>
       </div>
       {children}
       <div className="window-controls">
