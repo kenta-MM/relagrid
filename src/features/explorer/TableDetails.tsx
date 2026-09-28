@@ -82,7 +82,7 @@ export function TableDetails({
             </h4>
             <dl>
               <dt>行数（推定）</dt>
-              <dd>{table.estimatedRows.toLocaleString()}</dd>
+              <dd>{table.estimatedRows?.toLocaleString() ?? '未取得'}</dd>
               <dt>カラム数</dt>
               <dd>{table.columns.length}</dd>
               <dt>スキーマ</dt>

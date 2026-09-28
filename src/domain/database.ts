@@ -8,7 +8,7 @@ export interface Table {
   id: string;
   schema: string;
   name: string;
-  estimatedRows: number;
+  estimatedRows: number | null;
   columns: Column[];
 }
 export interface Relationship {

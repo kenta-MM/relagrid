@@ -2,7 +2,7 @@
 use crate::models::Table;
 
 pub const TABLES: &str = r#"
-    SELECT TABLE_NAME, CAST(COALESCE(TABLE_ROWS, 0) AS UNSIGNED) AS ROW_COUNT
+    SELECT TABLE_NAME
     FROM information_schema.TABLES
     WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'
     ORDER BY TABLE_NAME
@@ -133,7 +133,7 @@ mod tests {
             id: "db.t".into(),
             schema: "d`b".into(),
             name: "t`x".into(),
-            estimated_rows: 0,
+            estimated_rows: None,
             columns: vec![crate::models::Column {
                 name: "a`b".into(),
                 data_type: "blob".into(),

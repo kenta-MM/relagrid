@@ -53,7 +53,7 @@ pub struct Table {
     pub id: String,
     pub schema: String,
     pub name: String,
-    pub estimated_rows: u64,
+    pub estimated_rows: Option<u64>,
     pub columns: Vec<Column>,
 }
 

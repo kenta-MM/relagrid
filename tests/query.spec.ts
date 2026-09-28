@@ -44,7 +44,7 @@ test('keyboard commands share execution and tab actions while respecting focus a
   await expect(page.locator('.query-history button')).toHaveCount(1);
   await editor.press('Control+Enter');
   await expect(page.locator('.query-history button')).toHaveCount(2);
-  await editor.press('Control+t');
+  await editor.press('Control+n');
   await expect(page.getByRole('tab', { name: 'Query 2', exact: true })).toHaveAttribute(
     'aria-selected',
     'true',
@@ -57,11 +57,29 @@ test('keyboard commands share execution and tab actions while respecting focus a
   );
   await expect(editor).toBeFocused();
   await editor.press('Control+Tab');
-  page.once('dialog', (dialog) => dialog.dismiss());
   await editor.press('Control+w');
+  const confirmation = page.getByRole('dialog', { name: 'クエリを閉じる', exact: true });
+  const ok = confirmation.getByRole('button', { name: 'OK', exact: true });
+  const cancel = confirmation.getByRole('button', { name: 'Cancel', exact: true });
+  await expect(confirmation).toContainText('変更が保存されていませんが閉じますか？');
+  await expect(ok).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(cancel).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(ok).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await expect(confirmation).toHaveCount(0);
   await expect(page.getByRole('tab', { name: 'Query 2', exact: true })).toBeVisible();
-  page.once('dialog', (dialog) => dialog.accept());
   await editor.press('Control+w');
+  await cancel.hover();
+  await expect(cancel).toBeFocused();
+  await cancel.click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(editor).toBeFocused();
+  await editor.press('Control+w');
+  await expect(ok).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(page.getByRole('tab', { name: 'Query 2', exact: true })).toHaveCount(0);
   await expect(editor).toBeFocused();
   await editor.dispatchEvent('keydown', { key: 'F5', code: 'F5', isComposing: true });
@@ -90,6 +108,7 @@ test('switches independent result sets and displays partial failure without hidi
       isTauri: true,
       __TAURI_INTERNALS__: {
         invoke: async (command: string, args: { sql?: string; name?: string; text?: string }) => {
+          if (command === 'load_queries') return [];
           if (command === 'load_connections') return { connections: [], groups: [] };
           if (command === 'save_connections') return;
           if (command === 'begin_csv_export') {
@@ -194,7 +213,7 @@ test('separates SQL workspace, executes and preserves tabs across screen changes
   await page.getByRole('button', { name: '実行', exact: true }).click();
   await expect(page.locator('.query-data tbody tr')).toHaveCount(3);
   await expect(page.locator('.query-data')).toContainText('Aoki');
-  await page.getByRole('button', { name: '複製', exact: true }).click();
+  await page.getByRole('button', { name: '新規クエリ', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'Query 2', exact: true })).toBeVisible();
   await page.getByRole('textbox', { name: 'SQLクエリ' }).fill('SELECT * FROM Product LIMIT 2;');
   await page.getByRole('textbox', { name: 'SQLクエリ' }).press('Control+Enter');

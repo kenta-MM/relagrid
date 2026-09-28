@@ -2,8 +2,13 @@
 import { createElement } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { queryStore } from '@/data/query-store';
 import { QueryWorkspace } from './QueryWorkspace';
 import type { QueryResult, QueryResultSet } from '@/domain/database';
+
+vi.mock('@/data/query-store', () => ({
+  queryStore: { load: vi.fn().mockResolvedValue([]), save: vi.fn().mockResolvedValue(undefined) },
+}));
 
 vi.mock('./SqlEditor', () => ({
   SqlEditor: ({ value, onChange }: { value: string; onChange(value: string): void }) =>
@@ -21,14 +26,130 @@ afterEach(() => {
   cleanup();
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  vi.mocked(queryStore.load).mockReset().mockResolvedValue([]);
+  vi.mocked(queryStore.save).mockReset().mockResolvedValue(undefined);
+});
+
+it('saves the active query and all queries with shortcuts, then restores saved SQL', async () => {
+  const { unmount } = await setup();
+  const editor = () => screen.getByRole('textbox', { name: 'SQLクエリ' });
+  const key = (key: string, shiftKey = false) =>
+    fireEvent.keyDown(editor(), { key, ctrlKey: true, shiftKey });
+  fireEvent.change(editor(), { target: { value: 'SELECT 11;' } });
+  key('n');
+  fireEvent.change(editor(), { target: { value: 'SELECT 22;' } });
+  await act(async () => key('s'));
+  expect(queryStore.save).toHaveBeenLastCalledWith([
+    expect.objectContaining({ id: 2, sql: 'SELECT 22;' }),
+  ]);
+  expect(screen.getByRole('tab', { name: 'Query 1' }).textContent).toContain('*');
+  expect(screen.getByRole('tab', { name: 'Query 2' }).textContent).not.toContain('*');
+  await act(async () => key('s', true));
+  const saved = vi.mocked(queryStore.save).mock.calls.at(-1)![0];
+  expect(saved.map((tab) => tab.sql)).toEqual(['SELECT 11;', 'SELECT 22;']);
+  expect(saved[0]).not.toHaveProperty('result');
+  fireEvent.change(editor(), { target: { value: 'SELECT unsaved;' } });
+  unmount();
+  vi.mocked(queryStore.load).mockResolvedValueOnce(saved);
+  await setup();
+  expect((editor() as HTMLTextAreaElement).value).toBe('SELECT 11;');
+  click('Query 2', 'tab');
+  expect((editor() as HTMLTextAreaElement).value).toBe('SELECT 22;');
+  expect(screen.queryByRole('button', { name: '複製' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '比較' })).toBeNull();
+  key('n');
+  expect(screen.getByRole('tab', { name: 'Query 3' })).toBeTruthy();
+});
+
+it('keeps newer edits dirty during a save, and keeps them dirty on save failure', async () => {
+  await setup();
+  let finish!: () => void;
+  vi.mocked(queryStore.save).mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  click('保存');
+  fireEvent.change(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+    target: { value: 'SELECT 2;' },
+  });
+  await act(async () => finish());
+  expect(screen.getByRole('tab', { name: 'Query 1' }).textContent).toContain('*');
+  vi.mocked(queryStore.save).mockRejectedValueOnce(new Error('disk full'));
+  await act(async () => click('保存'));
+  expect(screen.getByRole('alert').textContent).toContain('disk full');
+  expect(screen.getByRole('tab', { name: 'Query 1' }).textContent).toContain('*');
+});
+
+it('confirms closing the last dirty tab, while a saved tab closes without confirmation', async () => {
+  await setup();
+  const close = () =>
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+      key: 'w',
+      ctrlKey: true,
+    });
+  close();
+  expect(screen.getByRole('dialog').textContent).toContain('変更内容が失われます');
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'OK' }));
+  fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }));
+  click('Cancel');
+  expect(screen.getByRole('tab', { name: 'Query 1' })).toBeTruthy();
+  await act(async () => click('保存'));
+  close();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByRole('tab', { name: 'Query 1' })).toBeNull();
+  expect(screen.getByRole('tab', { name: 'Query 2' })).toBeTruthy();
+  await act(async () => click('保存'));
+  expect(
+    vi
+      .mocked(queryStore.save)
+      .mock.calls.at(-1)![0]
+      .map((tab) => tab.id),
+  ).toEqual([1, 2]);
+});
+
+it('shows load failures and prevents overwriting unreadable saved queries', async () => {
+  vi.mocked(queryStore.load).mockRejectedValueOnce(new Error('invalid file'));
+  await setup();
+  expect(screen.getByRole('alert').textContent).toContain('invalid file');
+  expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
+    key: 's',
+    ctrlKey: true,
+  });
+  expect(queryStore.save).not.toHaveBeenCalled();
+});
+
+it('retains disconnected saved SQL when a connection is selected', async () => {
+  vi.mocked(queryStore.load).mockResolvedValueOnce([
+    {
+      id: 7,
+      name: 'Query 7',
+      sql: 'SELECT 77;',
+      connectionId: 0,
+      connectionLabel: '未接続',
+      readOnly: true,
+    },
+  ]);
+  const { props, rerender } = await setup();
+  rerender(createElement(QueryWorkspace, { ...props, connectionId: 2, connectionLabel: 'DB B' }));
+  expect((screen.getByRole('textbox', { name: 'SQLクエリ' }) as HTMLTextAreaElement).value).toBe(
+    'SELECT 77;',
+  );
+  expect((screen.getByRole('button', { name: '実行' }) as HTMLButtonElement).disabled).toBe(false);
+  await act(async () => click('保存'));
+  expect(queryStore.save).toHaveBeenLastCalledWith([
+    expect.objectContaining({ id: 7, sql: 'SELECT 77;', connectionId: 2 }),
+  ]);
 });
 
 it('shares tab commands, confirmation and disabled execution with keyboard shortcuts', async () => {
   const pending = deferred();
-  const { props } = setup(vi.fn().mockReturnValue(pending.promise));
+  const { props } = await setup(vi.fn().mockReturnValue(pending.promise));
   const key = (key: string, extra = {}) =>
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), { key, ...extra });
-  key('t', { ctrlKey: true });
+  key('n', { ctrlKey: true });
   expect(screen.getByRole('tab', { name: 'Query 2' }).getAttribute('aria-selected')).toBe('true');
   key('Tab', { ctrlKey: true, shiftKey: true });
   expect(screen.getByRole('tab', { name: 'Query 1' }).getAttribute('aria-selected')).toBe('true');
@@ -42,16 +163,16 @@ it('shares tab commands, confirmation and disabled execution with keyboard short
   await act(async () => key('F5', { shiftKey: true }));
   expect(props.cancel).toHaveBeenCalledWith(props.execute.mock.calls[0][2]);
   await act(async () => pending.reject(new Error('中断')));
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   key('w', { ctrlKey: true });
-  expect(confirm).toHaveBeenCalledTimes(1);
-  confirm.mockReturnValue(true);
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  click('Cancel');
   key('w', { ctrlKey: true });
+  click('OK');
   expect(screen.queryByRole('tab', { name: 'Query 2' })).toBeNull();
 });
 
-it('ignores composition, dialogs, other fields, repeats and hidden workspace', () => {
-  const { props, rerender } = setup();
+it('ignores composition, dialogs, other fields, repeats and hidden workspace', async () => {
+  const { props, rerender } = await setup();
   fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
     key: 'F5',
     isComposing: true,
@@ -61,7 +182,7 @@ it('ignores composition, dialogs, other fields, repeats and hidden workspace', (
     keyCode: 229,
   });
   fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
-    key: 't',
+    key: 'n',
     ctrlKey: true,
     repeat: true,
   });
@@ -74,7 +195,7 @@ it('ignores composition, dialogs, other fields, repeats and hidden workspace', (
   document.body.append(dialog);
   fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), { key: 'F5' });
   fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
-    key: 't',
+    key: 'n',
     ctrlKey: true,
   });
   dialog.remove();
@@ -86,7 +207,7 @@ it('ignores composition, dialogs, other fields, repeats and hidden workspace', (
 });
 
 it('switches results only when focused inside the results area', async () => {
-  setup(vi.fn().mockResolvedValue(multiResult()));
+  await setup(vi.fn().mockResolvedValue(multiResult()));
   await act(async () => click('実行'));
   fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
     key: 'ArrowRight',
@@ -123,7 +244,7 @@ function deferred() {
   });
   return { promise, resolve, reject };
 }
-function setup(execute = vi.fn().mockResolvedValue(result)) {
+async function setup(execute = vi.fn().mockResolvedValue(result)) {
   const props = {
     active: true,
     navigation: null,
@@ -138,6 +259,7 @@ function setup(execute = vi.fn().mockResolvedValue(result)) {
     cancel: vi.fn().mockResolvedValue(undefined),
   };
   const view = render(createElement(QueryWorkspace, props));
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'SQLクエリ' })).toBeTruthy());
   return { props, ...view };
 }
 const click = (name: string, role = 'button') =>
@@ -146,7 +268,7 @@ const click = (name: string, role = 'button') =>
 it('routes a delayed result to its owner and blocks duplicate execution before busy propagates', async () => {
   const pending = deferred();
   const execute = vi.fn().mockReturnValue(pending.promise);
-  setup(execute);
+  await setup(execute);
   click('実行');
   fireEvent.keyDown(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
     key: 'Enter',
@@ -174,7 +296,7 @@ it('routes a delayed result to its owner and blocks duplicate execution before b
 it('does not change another tab result view on failure and allows retry', async () => {
   const pending = deferred();
   const execute = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(result);
-  setup(execute);
+  await setup(execute);
   click('実行');
   click('新規クエリ');
   await act(async () => pending.reject(new Error('A failed')));
@@ -187,7 +309,7 @@ it('does not change another tab result view on failure and allows retry', async 
 });
 
 it('retains SQL and results across connections and refuses execution on a different connection', async () => {
-  const { props, rerender } = setup();
+  const { props, rerender } = await setup();
   await act(async () => click('実行'));
   rerender(createElement(QueryWorkspace, { ...props, connectionId: 2, connectionLabel: 'DB B' }));
   expect(screen.getByRole('tab', { name: 'Query 2' }).getAttribute('aria-selected')).toBe('true');
@@ -203,7 +325,7 @@ it('retains SQL and results across connections and refuses execution on a differ
 
 it('waits for cancellation completion before closing and confirms unsaved SQL', async () => {
   const pending = deferred();
-  const { props } = setup(vi.fn().mockReturnValue(pending.promise));
+  const { props } = await setup(vi.fn().mockReturnValue(pending.promise));
   click('実行');
   await act(async () => click('中断'));
   expect(props.cancel).toHaveBeenCalledWith(props.execute.mock.calls[0][2]);
@@ -212,18 +334,18 @@ it('waits for cancellation completion before closing and confirms unsaved SQL', 
     (screen.getByRole('button', { name: 'Query 1を閉じる' }) as HTMLButtonElement).disabled,
   ).toBe(true);
   await act(async () => pending.reject(new Error('中断しました')));
-  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
   click('Query 1を閉じる');
+  click('Cancel');
   expect(screen.getByRole('tab', { name: 'Query 1' })).toBeTruthy();
-  confirm.mockReturnValue(true);
   click('Query 1を閉じる');
+  click('OK');
   expect(screen.queryByRole('tab', { name: 'Query 1' })).toBeNull();
 });
 
 it('captures SQL at start while allowing edits and keeps pagination per tab', async () => {
   const pending = deferred();
   const execute = vi.fn().mockReturnValue(pending.promise);
-  setup(execute);
+  await setup(execute);
   click('実行');
   fireEvent.change(screen.getByRole('textbox', { name: 'SQLクエリ' }), {
     target: { value: 'SELECT 2;' },
@@ -232,8 +354,7 @@ it('captures SQL at start while allowing edits and keeps pagination per tab', as
     pending.resolve({ ...result, rows: Array.from({ length: 30 }, (_, i) => [String(i)]) }),
   );
   expect(execute.mock.calls[0][0]).toBe('SELECT 1;');
-  click('比較');
-  expect(screen.getByText('SELECT 1;')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '比較' })).toBeNull();
   click('次へ');
   expect(screen.getByText('2 / 3')).toBeTruthy();
   click('新規クエリ');
@@ -243,18 +364,6 @@ it('captures SQL at start while allowing edits and keeps pagination per tab', as
   expect((screen.getByRole('textbox', { name: 'SQLクエリ' }) as HTMLTextAreaElement).value).toBe(
     'SELECT 2;',
   );
-});
-
-it('duplicates SQL without copying execution/results and retains the source connection', async () => {
-  const { props, rerender } = setup();
-  await act(async () => click('実行'));
-  rerender(createElement(QueryWorkspace, { ...props, connectionId: 2, connectionLabel: 'DB B' }));
-  click('Query 1', 'tab');
-  click('複製');
-  expect(screen.getByRole('tab', { name: 'Query 3' }).getAttribute('aria-selected')).toBe('true');
-  expect(screen.queryByText('A result')).toBeNull();
-  expect((screen.getByRole('button', { name: '実行' }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByText(/サイドバーでこの接続/).textContent).toContain('DB A');
 });
 
 function multiResult(error?: string): QueryResult {
@@ -281,7 +390,7 @@ function multiResult(error?: string): QueryResult {
 
 it('keeps each result page, scroll and selection across editor switches without executing again', async () => {
   const execute = vi.fn().mockResolvedValue(multiResult());
-  const { container } = setup(execute);
+  const { container } = await setup(execute);
   await act(async () => click('実行'));
   click('次へ');
   const scroll = container.querySelector('.query-result-scroll')!;
@@ -303,7 +412,7 @@ it('keeps each result page, scroll and selection across editor switches without 
 });
 
 it('distinguishes empty table metadata and updates and exports only the selected result', async () => {
-  setup(vi.fn().mockResolvedValue(multiResult()));
+  await setup(vi.fn().mockResolvedValue(multiResult()));
   await act(async () => click('実行'));
   click('結果 3', 'tab');
   expect(screen.getByRole('columnheader', { name: 'empty_column' })).toBeTruthy();
@@ -339,7 +448,7 @@ it('distinguishes empty table metadata and updates and exports only the selected
 
 it('shows partial results with failure status and clears old results when re-executed', async () => {
   const pending = deferred();
-  setup(
+  await setup(
     vi
       .fn()
       .mockResolvedValueOnce(multiResult('文5で失敗しました'))

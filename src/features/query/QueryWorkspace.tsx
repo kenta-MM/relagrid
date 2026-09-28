@@ -5,10 +5,12 @@ import {
   shortcutAria,
 } from '@/lib/shortcut-settings';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Copy, Download, Play, Plus, Save, Table2, X, Clock } from 'lucide-react';
+import { Save, Download, Play, Plus, Table2, X, Clock, CircleCheck } from 'lucide-react';
+import { queryStore, type SavedQuery } from '@/data/query-store';
 import { Button } from '@/components/ui/button';
 import type { QueryResult, QueryResultSet, Table } from '@/domain/database';
 import { SqlEditor } from './SqlEditor';
+import { CloseQueryDialog } from './CloseQueryDialog';
 import { CsvExportDialog, type ExportSelection } from '@/features/csv/CsvExportDialog';
 import { claimShortcut, shortcutTarget } from '@/lib/shortcuts';
 
@@ -32,7 +34,6 @@ interface QueryTab {
   result?: QueryResult;
   plan?: QueryResult;
   error?: string;
-  lastSql?: string;
   savedSql: string;
   connectionId: number;
   connectionLabel: string;
@@ -66,14 +67,6 @@ interface Props {
   connectionLabel: string;
   execute(sql: string, explain?: boolean, executionId?: string): Promise<QueryResult>;
   cancel(executionId: string): Promise<void>;
-}
-function download(name: string, text: string, type: string) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function ResultTable({
   result,
@@ -156,27 +149,119 @@ export function QueryWorkspace({
   }
   const [tabs, setTabs] = useState<QueryTab[]>(() => [createTab(1, initialSql())]);
   const [tabId, setTabId] = useState(1);
+  const savedQueries = useRef<SavedQuery[]>([]);
+  const saving = useRef(false);
+  const [storeReady, setStoreReady] = useState(false);
+  const [storeLoaded, setStoreLoaded] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [storageMessage, setStorageMessage] = useState('');
+  const [storageError, setStorageError] = useState('');
+  useEffect(() => {
+    if (!storageMessage) return;
+    const timeout = window.setTimeout(() => setStorageMessage(''), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [storageMessage]);
+  useEffect(() => {
+    let cancelled = false;
+    void queryStore
+      .load()
+      .then((saved) => {
+        if (cancelled) return;
+        savedQueries.current = saved;
+        if (saved.length) {
+          nextId.current = Math.max(...saved.map((tab) => tab.id)) + 1;
+          setTabs(
+            saved.map((tab) => ({
+              ...createTab(tab.id, tab.sql),
+              ...tab,
+              savedSql: tab.sql,
+            })),
+          );
+          setTabId(saved[0].id);
+        }
+        setStoreReady(true);
+        setStoreLoaded(true);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStorageError(`クエリを復元できませんでした: ${String(error)}`);
+          setStoreLoaded(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  async function save(all = false) {
+    if (!storeReady || saving.current) return;
+    const selected = all ? tabs : tabs.filter((tab) => tab.id === tabId);
+    const snapshots: SavedQuery[] = selected.map(
+      ({ id, name, sql, connectionId, connectionLabel, readOnly }) => ({
+        id,
+        name,
+        sql,
+        connectionId,
+        connectionLabel,
+        readOnly,
+      }),
+    );
+    const data = [
+      ...savedQueries.current.filter((saved) => !snapshots.some((tab) => tab.id === saved.id)),
+      ...snapshots,
+    ];
+    saving.current = true;
+    setSaveBusy(true);
+    setStorageError('');
+    setStorageMessage('');
+    try {
+      await queryStore.save(data);
+      savedQueries.current = data;
+      setTabs((tabs) =>
+        tabs.map((tab) => {
+          const saved = snapshots.find((saved) => saved.id === tab.id);
+          return saved ? { ...tab, savedSql: saved.sql } : tab;
+        }),
+      );
+      setStorageMessage('保存しました');
+    } catch (error) {
+      setStorageError(`クエリを保存できませんでした: ${String(error)}`);
+    } finally {
+      saving.current = false;
+      setSaveBusy(false);
+    }
+  }
   const previousConnection = useRef(connectionId);
   useEffect(() => {
+    if (!storeLoaded) return;
     if (previousConnection.current === connectionId) return;
     previousConnection.current = connectionId;
-    if (
-      connectionId !== 0 &&
-      tabs.length === 1 &&
-      tabs[0].connectionId === 0 &&
-      !tabs[0].sql.trim()
-    ) {
-      setTabs([createTab(tabs[0].id, initialSql())]);
+    if (connectionId !== 0 && tabs.some((tab) => tab.connectionId === 0)) {
+      setTabs((tabs) =>
+        tabs.map((tab) =>
+          tab.connectionId === 0
+            ? {
+                ...tab,
+                connectionId,
+                connectionLabel,
+                readOnly,
+                sql:
+                  tab.sql ||
+                  (savedQueries.current.some((saved) => saved.id === tab.id) ? '' : initialSql()),
+              }
+            : tab,
+        ),
+      );
       return;
     }
     const existing = tabs.find((tab) => tab.connectionId === connectionId);
     if (existing) setTabId(existing.id);
     else add();
-  }, [connectionId]);
+  }, [connectionId, storeLoaded]);
   const [inspectorTab, setInspectorTab] = useState('summary');
   const [history, setHistory] = useState<Execution[]>([]);
-  const [compare, setCompare] = useState(false);
   const [exportSelection, setExportSelection] = useState<ExportSelection | null>(null);
+  const [closingTabId, setClosingTabId] = useState<number | null>(null);
+  const closingTab = tabs.find((tab) => tab.id === closingTabId);
   const current = tabs.find((tab) => tab.id === tabId)!;
   function selectEditor(id: number) {
     if (id === tabId) {
@@ -185,21 +270,32 @@ export function QueryWorkspace({
     }
     setTabId(id);
   }
-  function closeEditor(id: number) {
+  function closeEditor(id: number, discard = false) {
     const tab = tabs.find((tab) => tab.id === id);
-    if (!tab || tab.executionId || tabs.length === 1) return;
-    if (tab.sql !== tab.savedSql && !window.confirm(`${tab.name}の未保存SQLを破棄しますか？`))
+    if (!tab || tab.executionId || saving.current) return;
+    if (tab.sql !== tab.savedSql && !discard) {
+      setClosingTabId(id);
       return;
+    }
+    setClosingTabId(null);
+    if (tabs.length === 1) {
+      const id = nextId.current++;
+      setTabs([createTab(id, '')]);
+      selectEditor(id);
+      return;
+    }
     setTabs((tabs) => tabs.filter((tab) => tab.id !== id));
     if (tabId === id) selectEditor(tabs.find((tab) => tab.id !== id)!.id);
   }
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
       const target = shortcutTarget(event);
-      if (!active || !target?.closest('.query-workspace')) return;
+      if (!active || !storeLoaded || !target?.closest('.query-workspace')) return;
       let action: (() => void) | undefined;
       const matches = (id: keyof typeof shortcuts) => matchesShortcut(event, shortcuts[id]);
       if (matches('newQuery')) action = () => add();
+      else if (matches('saveQuery')) action = () => void save();
+      else if (matches('saveAllQueries')) action = () => void save(true);
       else if (matches('closeQuery')) action = () => closeEditor(tabId);
       else if (matches('nextQuery') || matches('previousQuery'))
         action = () => {
@@ -319,7 +415,6 @@ export function QueryWorkspace({
       const result = await execute(sql, explain, executionId);
       update(id, {
         [explain ? 'plan' : 'result']: result,
-        lastSql: sql,
         error: result.error ?? undefined,
       });
       setHistory((items) =>
@@ -388,6 +483,7 @@ export function QueryWorkspace({
     });
   }
   if (!active) return null;
+  if (!storeLoaded) return <p role="status">保存クエリを読み込んでいます…</p>;
   return (
     <div className="query-workspace" style={{ display: 'contents' }}>
       <main className="main-panel sql-main">
@@ -421,17 +517,15 @@ export function QueryWorkspace({
                     {tab.sql !== tab.savedSql && <span aria-hidden="true"> *</span>}
                     {tab.executionId && <span>（実行中）</span>}
                   </button>
-                  {tabs.length > 1 && (
-                    <button
-                      aria-label={`${tab.name}を閉じる`}
-                      title={`閉じる（${shortcutLabel(shortcuts.closeQuery)}）`}
-                      aria-keyshortcuts={shortcutAria(shortcuts.closeQuery)}
-                      disabled={!!tab.executionId}
-                      onClick={() => closeEditor(tab.id)}
-                    >
-                      <X size={12} />
-                    </button>
-                  )}
+                  <button
+                    aria-label={`${tab.name}を閉じる`}
+                    title={`閉じる（${shortcutLabel(shortcuts.closeQuery)}）`}
+                    aria-keyshortcuts={shortcutAria(shortcuts.closeQuery)}
+                    disabled={!!tab.executionId || saveBusy}
+                    onClick={() => closeEditor(tab.id)}
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
               ))}
               <Button
@@ -446,18 +540,26 @@ export function QueryWorkspace({
               </Button>
             </div>
             <div className="query-actions">
-              <Button variant="outline" size="sm" onClick={() => add(current.sql, current)}>
-                <Copy size={14} />
-                複製
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!storeReady || saveBusy}
+                title={`保存（${shortcutLabel(shortcuts.saveQuery)}）`}
+                aria-keyshortcuts={shortcutAria(shortcuts.saveQuery)}
+                onClick={() => void save()}
+              >
+                <Save size={14} />
+                保存
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                disabled={!current.lastSql}
-                aria-pressed={compare}
-                onClick={() => setCompare(!compare)}
+                disabled={!storeReady || saveBusy}
+                title={`すべて保存（${shortcutLabel(shortcuts.saveAllQueries)}）`}
+                aria-keyshortcuts={shortcutAria(shortcuts.saveAllQueries)}
+                onClick={() => void save(true)}
               >
-                比較
+                すべて保存
               </Button>
               <Button
                 size="sm"
@@ -501,18 +603,13 @@ export function QueryWorkspace({
               で全文実行（選択範囲に関係なく）
             </span>
           </div>
+          {storageError && <p role="alert">{storageError}</p>}
           <SqlEditor
             key={tabId}
             value={current.sql}
             tables={current.connectionId === connectionId ? tables : []}
             onChange={(sql) => update(tabId, { sql })}
           />
-          {compare && current.lastSql && (
-            <div className="query-comparison">
-              <span>前回実行したSQL</span>
-              <pre>{current.lastSql}</pre>
-            </div>
-          )}
         </section>
         <section
           className="sql-results"
@@ -581,41 +678,57 @@ export function QueryWorkspace({
               実行全体は失敗しました。{batch?.error || current.error}
             </div>
           )}
-          <div
-            className="query-result-scroll"
-            ref={scroll}
-            onScroll={(event) =>
-              updateView({
-                top: event.currentTarget.scrollTop,
-                left: event.currentTarget.scrollLeft,
-              })
-            }
-          >
-            {resultTab === 'messages' ? (
-              <div className="query-message" role={current.error ? 'alert' : 'status'}>
-                {current.error ||
-                  (latest?.result
-                    ? `${latest.explain ? '実行計画を取得' : '実行完了'} · ${latest.result.elapsedMs} ms · ${rowCount(latest.result)} 行取得 · ${latest.result.affectedRows} 行に影響`
-                    : current.executionId
-                      ? '実行中です。'
-                      : 'SQLを入力して実行してください。')}
-                {latest?.result?.truncated && (
-                  <p>
-                    結果は上限（結果ごとに1,000行・各値5,000文字・実行全体で約5MB）で省略されています。
-                  </p>
-                )}
-              </div>
-            ) : result ? (
-              <ResultTable result={result} page={page} size={size} />
-            ) : (
-              <div className="preview-empty">
-                {resultTab === 'plan' ? (
-                  <Button variant="outline" disabled={!canRun} onClick={() => void run(true)}>
-                    実行計画を取得（EXPLAIN）
-                  </Button>
-                ) : (
-                  'SQLを実行すると、ここに結果が表示されます。'
-                )}
+          <div className="query-result-area">
+            <div
+              className="query-result-scroll"
+              ref={scroll}
+              onScroll={(event) =>
+                updateView({
+                  top: event.currentTarget.scrollTop,
+                  left: event.currentTarget.scrollLeft,
+                })
+              }
+            >
+              {resultTab === 'messages' ? (
+                <div className="query-message" role={current.error ? 'alert' : 'status'}>
+                  {current.error ||
+                    (latest?.result
+                      ? `${latest.explain ? '実行計画を取得' : '実行完了'} · ${latest.result.elapsedMs} ms · ${rowCount(latest.result)} 行取得 · ${latest.result.affectedRows} 行に影響`
+                      : current.executionId
+                        ? '実行中です。'
+                        : 'SQLを入力して実行してください。')}
+                  {latest?.result?.truncated && (
+                    <p>
+                      結果は上限（結果ごとに1,000行・各値5,000文字・実行全体で約5MB）で省略されています。
+                    </p>
+                  )}
+                </div>
+              ) : result ? (
+                <ResultTable result={result} page={page} size={size} />
+              ) : (
+                <div className="preview-empty">
+                  {resultTab === 'plan' ? (
+                    <Button variant="outline" disabled={!canRun} onClick={() => void run(true)}>
+                      実行計画を取得（EXPLAIN）
+                    </Button>
+                  ) : (
+                    'SQLを実行すると、ここに結果が表示されます。'
+                  )}
+                </div>
+              )}
+            </div>
+            {storageMessage && (
+              <div className="query-save-toast" role="status" aria-live="polite">
+                <CircleCheck className="query-save-toast-icon" size={18} aria-hidden="true" />
+                <span>{storageMessage}</span>
+                <button
+                  type="button"
+                  aria-label="保存通知を閉じる"
+                  onClick={() => setStorageMessage('')}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+                <div className="query-save-toast-progress" aria-hidden="true" />
               </div>
             )}
           </div>
@@ -755,22 +868,14 @@ export function QueryWorkspace({
           ))}
           {!history.length && <p className="muted">実行履歴はありません。</p>}
         </div>
-        <div className="query-inspector-actions">
-          <Button
-            onClick={() => {
-              download(`${current.name}.sql`, current.sql, 'text/plain;charset=utf-8');
-              update(tabId, { savedSql: current.sql });
-            }}
-          >
-            <Save size={16} />
-            保存する
-          </Button>
-          <Button variant="outline" onClick={() => add()}>
-            <Plus size={16} />
-            新規クエリ
-          </Button>
-        </div>
       </aside>
+      {closingTab && (
+        <CloseQueryDialog
+          name={closingTab.name}
+          confirm={() => closeEditor(closingTab.id, true)}
+          cancel={() => setClosingTabId(null)}
+        />
+      )}
       {exportSelection && (
         <CsvExportDialog selection={exportSelection} close={() => setExportSelection(null)} />
       )}

@@ -6,6 +6,7 @@ export async function openFixture(page: Page) {
   await page.exposeFunction(
     'fixtureInvoke',
     async (command: string, args: { tableId?: string; sql?: string; explain?: boolean }) => {
+      if (command === 'load_queries') return [];
       if (command === 'load_connections') return { connections: [], groups: [] };
       if (command === 'connect_database' || command === 'refresh_schema') return demoSnapshot;
       if (command === 'preview_table')

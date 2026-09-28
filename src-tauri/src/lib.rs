@@ -2,6 +2,7 @@ mod connection_store;
 mod csv_export;
 mod database;
 mod models;
+mod query_store;
 
 use models::{ConnectionConfig, Preview, QueryResult, SchemaSnapshot};
 use sqlx::MySqlPool;
@@ -140,9 +141,12 @@ pub fn run() {
         .manage(csv_export::CsvExportState::default())
         .manage(AppState::default())
         .manage(connection_store::StoreState::default())
+        .manage(query_store::QueryStoreState::default())
         .invoke_handler(tauri::generate_handler![
             connection_store::load_connections,
             connection_store::save_connections,
+            query_store::load_queries,
+            query_store::save_queries,
             connect_database,
             refresh_schema,
             preview_table,

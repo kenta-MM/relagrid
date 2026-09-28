@@ -9,6 +9,7 @@ test('saves connections and restores the list on restart without auto-connecting
   await page.exposeFunction(
     'savedConnectionInvoke',
     (command: string, args: { data?: SavedConnections }) => {
+      if (command === 'load_queries') return [];
       if (command === 'load_connections') return saved;
       if (command === 'save_connections') {
         saved = args.data!;

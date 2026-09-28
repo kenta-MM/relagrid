@@ -82,7 +82,7 @@ pub async fn schema(pool: &MySqlPool, database: &str) -> Result<SchemaSnapshot, 
             schema: database.into(),
             columns: columns_by_table.remove(&name).unwrap_or_default(),
             name,
-            estimated_rows: row.try_get::<u64, _>("ROW_COUNT").map_err(db_error)?,
+            estimated_rows: None,
         });
     }
     let table_ids: HashSet<_> = tables.iter().map(|table| table.id.as_str()).collect();

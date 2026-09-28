@@ -18,7 +18,11 @@ export const TableNode = memo(function TableNode({ data, selected }: NodeProps<T
         </span>
         <div>
           <strong>{data.table.name}</strong>
-          <small>≈ {data.table.estimatedRows.toLocaleString()} rows</small>
+          <small>
+            {data.table.estimatedRows === null
+              ? '件数未取得'
+              : `≈ ${data.table.estimatedRows.toLocaleString()} rows`}
+          </small>
         </div>
       </div>
       <div className="node-columns">

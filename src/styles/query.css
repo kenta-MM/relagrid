@@ -75,17 +75,6 @@
   min-height: 100px;
   overflow: hidden;
 }
-.query-comparison {
-  max-height: 100px;
-  overflow: auto;
-  border-top: 1px solid #30394f;
-  padding: 8px 16px;
-  font-size: 11px;
-  color: #94a5bf;
-}
-.query-comparison pre {
-  white-space: pre-wrap;
-}
 .sql-results {
   flex: 1.15;
   min-height: 190px;
@@ -116,6 +105,78 @@
   border-color: #9665e9;
   color: #e1d3ff;
   background: #7854c92b;
+}
+.query-result-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.query-save-toast {
+  position: absolute;
+  right: 12px;
+  bottom: 18px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 210px;
+  max-width: calc(100% - 24px);
+  min-height: 50px;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid #9460cd;
+  border-radius: 11px;
+  background: linear-gradient(120deg, #252039, #171f2e);
+  box-shadow:
+    0 5px 24px #a24ef52b,
+    inset 0 0 0 1px #bd83ff15;
+  color: #f1ecfa;
+  font-size: 14px;
+  font-weight: 600;
+}
+.query-save-toast-icon {
+  flex-shrink: 0;
+  fill: #b469f5;
+  color: #252039;
+}
+.query-save-toast button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border-radius: 4px;
+  color: #c9c2d9;
+}
+.query-save-toast button:hover {
+  background: #b469f526;
+  color: #fff;
+}
+.query-save-toast button:focus-visible {
+  outline: 2px solid #b469f5;
+  outline-offset: 2px;
+}
+.query-save-toast-progress {
+  position: absolute;
+  inset: auto 0 0;
+  height: 3px;
+  background: #b469f5;
+  transform-origin: left;
+  animation: query-save-countdown 4s linear forwards;
+}
+@keyframes query-save-countdown {
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .query-save-toast-progress {
+    animation: none;
+  }
 }
 .query-result-scroll {
   flex: 1;
@@ -234,13 +295,6 @@
 }
 .execution-success {
   color: #39cb95;
-}
-.query-inspector-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: auto;
-  padding-top: 24px;
 }
 .connection-form .read-only-option {
   display: flex;

@@ -13,6 +13,7 @@ test('exports the selected table independently of the preview limit', async ({ p
           command: string,
           args: { tableId?: string; progress?: { onmessage(value: { rows: number }): void } },
         ) => {
+          if (command === 'load_queries') return [];
           if (command === 'load_connections') return { connections: [], groups: [] };
           if (command === 'save_connections') return;
           calls.push(command);
