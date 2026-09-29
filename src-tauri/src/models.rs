@@ -70,6 +70,7 @@ pub struct Relationship {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaSnapshot {
+    pub session_id: Option<String>,
     pub tables: Vec<Table>,
     pub relationships: Vec<Relationship>,
 }

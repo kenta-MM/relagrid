@@ -184,6 +184,9 @@ export function App() {
             table={table}
             mode={explorer.mode}
             onClear={explorer.clearLogs}
+            busy={explorer.busy}
+            sessionId={explorer.snapshot.sessionId}
+            connectionLabel={`${connection?.host}:${connection?.port} / ${explorer.database}`}
           />
         </main>
         <div

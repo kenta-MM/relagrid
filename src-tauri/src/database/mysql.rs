@@ -113,6 +113,7 @@ pub async fn schema(pool: &MySqlPool, database: &str) -> Result<SchemaSnapshot, 
         });
     }
     Ok(SchemaSnapshot {
+        session_id: None,
         tables,
         relationships,
     })

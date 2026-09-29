@@ -14,11 +14,33 @@ use tokio::sync::{oneshot, Mutex};
 const MAX_CHUNK: usize = 64 * 1024;
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
+#[derive(Clone, serde::Deserialize, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSource {
+    session_id: String,
+    table_id: String,
+}
+
+fn source_table<'a>(
+    snapshot: &'a crate::models::SchemaSnapshot,
+    source: &ExportSource,
+) -> Result<&'a crate::models::Table, String> {
+    if snapshot.session_id.as_deref() != Some(source.session_id.as_str()) {
+        return Err("接続先が変更されました。出力画面を開き直してください".into());
+    }
+    snapshot
+        .tables
+        .iter()
+        .find(|table| table.id == source.table_id)
+        .ok_or_else(|| "テーブルが見つかりません。スキーマを更新してください".into())
+}
+
 struct ExportFile {
     id: String,
     target: PathBuf,
     file: NamedTempFile,
     cancellation: Option<oneshot::Receiver<()>>,
+    source: Option<ExportSource>,
 }
 impl ExportFile {
     fn new(target: PathBuf) -> Result<Self, String> {
@@ -33,6 +55,7 @@ impl ExportFile {
             target,
             file,
             cancellation: None,
+            source: None,
         })
     }
     fn write(&mut self, text: &str) -> Result<(), String> {
@@ -176,7 +199,7 @@ pub(crate) async fn export_table_csv(
     state: State<'_, CsvExportState>,
     database: State<'_, crate::AppState>,
     id: String,
-    table_id: String,
+    source: ExportSource,
     progress: Channel<ExportProgress>,
 ) -> Result<u64, String> {
     let mut active = state.0.lock().await;
@@ -186,15 +209,13 @@ pub(crate) async fn export_table_csv(
         .ok_or("出力は終了しています")?;
     let receiver = file.cancellation.take().ok_or("出力は開始済みです")?;
     let operation = async {
+        if file.source.as_ref() != Some(&source) {
+            return Err("出力元が一致しません。出力画面を開き直してください".into());
+        }
         // Keep the source connection fixed until the reader has been released.
         let guard = database.session.lock().await;
         let session = guard.as_ref().ok_or("データベースに接続してください")?;
-        let table = session
-            .snapshot
-            .tables
-            .iter()
-            .find(|t| t.id == table_id)
-            .ok_or("テーブルが見つかりません。スキーマを更新してください")?;
+        let table = source_table(&session.snapshot, &source)?;
         stream_table(&session.pool, table, file, &progress).await
     };
     let bounded = async {
@@ -238,11 +259,18 @@ async fn table_cancellable<T>(
 pub async fn begin_csv_export(
     app: AppHandle,
     state: State<'_, CsvExportState>,
+    database: State<'_, crate::AppState>,
     name: String,
+    source: Option<ExportSource>,
 ) -> Result<Option<String>, String> {
     let mut active = state.0.lock().await;
     if active.is_some() {
         return Err("別のCSV出力が進行中です".into());
+    }
+    if let Some(source) = &source {
+        let guard = database.session.lock().await;
+        let session = guard.as_ref().ok_or("データベースに接続してください")?;
+        source_table(&session.snapshot, source)?;
     }
     // Native dialogs must not block the UI thread. The path never comes from IPC.
     let path = tauri::async_runtime::spawn_blocking(move || {
@@ -258,7 +286,13 @@ pub async fn begin_csv_export(
     let Some(path) = path else {
         return Ok(None);
     };
+    if let Some(source) = &source {
+        let guard = database.session.lock().await;
+        let session = guard.as_ref().ok_or("データベースに接続してください")?;
+        source_table(&session.snapshot, source)?;
+    }
     let mut file = ExportFile::new(path.into_path().map_err(|_| "保存先が不正です")?)?;
+    file.source = source;
     let id = file.id.clone();
     let (sender, receiver) = oneshot::channel();
     file.cancellation = Some(receiver);
@@ -320,6 +354,35 @@ pub async fn abort_csv_export(state: State<'_, CsvExportState>, id: String) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stale_session_cannot_export_same_named_table() {
+        let source = ExportSource {
+            session_id: "a".into(),
+            table_id: "db.target".into(),
+        };
+        let mut snapshot = crate::models::SchemaSnapshot {
+            session_id: Some("a".into()),
+            tables: vec![crate::models::Table {
+                id: "db.target".into(),
+                schema: "db".into(),
+                name: "target".into(),
+                columns: vec![],
+                estimated_rows: None,
+            }],
+            relationships: vec![],
+        };
+        assert!(source_table(&snapshot, &source).is_ok());
+        snapshot.session_id = Some("b".into());
+        assert!(source_table(&snapshot, &source)
+            .err()
+            .unwrap()
+            .contains("接続先"));
+        snapshot.session_id = None;
+        assert!(source_table(&snapshot, &source).is_err());
+        snapshot.session_id = Some("a".into());
+        snapshot.tables.clear();
+        assert!(source_table(&snapshot, &source).is_err());
+    }
     #[test]
     fn protects_spreadsheet_prefixes_without_changing_other_text() {
         for value in ["=1+1", "+1", "-1", "@SUM(A1)", "\tvalue", "\rvalue"] {

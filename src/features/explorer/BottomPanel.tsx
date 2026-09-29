@@ -2,7 +2,7 @@ import { Activity, LoaderCircle, Table2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import type { Preview, Table } from '@/domain/database';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { TableExportDialog } from '@/features/csv/TableExportDialog';
 import type { LogEntry } from './useExplorer';
@@ -16,6 +16,9 @@ interface Props {
   tableName?: string;
   table?: Table;
   mode: string;
+  busy: boolean;
+  sessionId?: string | null;
+  connectionLabel: string;
   onClear(): void;
 }
 export function BottomPanel({
@@ -28,9 +31,17 @@ export function BottomPanel({
   tableName,
   table,
   mode,
+  busy,
+  sessionId,
+  connectionLabel,
   onClear,
 }: Props) {
-  const [exportTable, setExportTable] = useState<Table | null>(null);
+  const [exportTable, setExportTable] = useState<{
+    table: Table;
+    sessionId: string;
+    connectionLabel: string;
+  } | null>(null);
+  useEffect(() => setExportTable(null), [sessionId, busy]);
   return (
     <Tabs value={tab} onValueChange={onTab} className="bottom-panel">
       <div className="bottom-tabs">
@@ -52,7 +63,12 @@ export function BottomPanel({
           <div className="flex items-center gap-2">
             <span className="preview-caption">{tableName} · 最大100件 / 各値500文字まで</span>
             {mode === 'mysql' && isTauri() && table && (
-              <Button variant="ghost" size="sm" onClick={() => setExportTable(table)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy || !sessionId}
+                onClick={() => sessionId && setExportTable({ table, sessionId, connectionLabel })}
+              >
                 テーブル全件をCSV出力
               </Button>
             )}
@@ -108,7 +124,9 @@ export function BottomPanel({
           </div>
         )}
       </TabsContent>
-      {exportTable && <TableExportDialog table={exportTable} close={() => setExportTable(null)} />}
+      {exportTable && exportTable.sessionId === sessionId && !busy && (
+        <TableExportDialog {...exportTable} close={() => setExportTable(null)} />
+      )}
     </Tabs>
   );
 }
