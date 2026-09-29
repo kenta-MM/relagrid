@@ -44,6 +44,7 @@ test('exports the selected table independently of the preview limit', async ({ p
   await page.goto('/');
   await page.getByRole('button', { name: '接続を追加' }).click();
   await page.getByLabel('データベース名').fill('fixture');
+  await page.getByLabel('ユーザー名').fill('fixture_reader');
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
   await page.getByRole('button', { name: 'データを表示', exact: true }).click();
   await expect(page.locator('.data-table tbody tr')).toHaveCount(1);
