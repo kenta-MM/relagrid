@@ -148,10 +148,12 @@ npm run check:rust
 MySQL統合テストは通常スキップします。**検証用の独立したMySQL**を `127.0.0.1:3307` に立て、`tests/fixtures/schema.sql` を投入してから実行してください。ユーザーは `root`、空パスワード、DBは `relagrid_fixture` です。既存の業務DBには投入しないでください。
 
 ```powershell
-cargo test --manifest-path src-tauri/Cargo.toml mysql_fixture -- --ignored
+cargo test --manifest-path src-tauri/Cargo.toml mysql_fixture -- --ignored --test-threads=1
 ```
 
 このテストはスキーマ・外部キー・日本語・NULL・数値・バイナリの読み取りと、読み取り専用セッションがUPDATEを拒否することを確認します。
+
+全件CSVテストが一時テーブルを作成するため、同じfixtureを使う統合テストは直列で実行します。追加した異常系・境界値テスト、隔離プロファイルでのデスクトップ起動テスト、未検証項目は [QA検証記録](docs/qa-coverage.md) を参照してください。
 
 ## 配布
 

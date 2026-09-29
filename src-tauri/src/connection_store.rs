@@ -265,6 +265,44 @@ mod tests {
         }
     }
     #[test]
+    fn invalid_entries_never_replace_an_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("connections.json");
+        write(&path, &sample()).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        for field in ["id", "duplicate", "port", "host", "database", "username"] {
+            let mut invalid = sample();
+            let entry = &mut invalid.connections[0];
+            match field {
+                "id" => entry.id = 0,
+                "port" => entry.config.port = 0,
+                "host" => entry.config.host = " \t".into(),
+                "database" => entry.config.database.clear(),
+                "username" => entry.config.username = " ".into(),
+                _ => invalid.connections.push(invalid.connections[0].clone()),
+            }
+            assert!(write(&path, &invalid).is_err(), "{field}");
+            assert_eq!(std::fs::read(&path).unwrap(), original);
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
+    }
+
+    #[test]
+    fn ciphertext_cannot_be_swapped_between_connections_in_the_same_file() {
+        let mut data = sample();
+        let mut second = data.connections[0].clone();
+        second.id = 2;
+        second.config.password = "second-secret".into();
+        data.connections.push(second);
+        let mut envelope: Envelope = serde_json::from_slice(&seal(&data).unwrap()).unwrap();
+        let first_password = envelope.data.connections[0].config.password.clone();
+        envelope.data.connections[0].config.password =
+            envelope.data.connections[1].config.password.clone();
+        envelope.data.connections[1].config.password = first_password;
+        assert!(unseal(&serde_json::to_vec(&envelope).unwrap()).is_err());
+    }
+
+    #[test]
     fn dpapi_aes_round_trip_and_fresh_nonces() {
         let data = sample();
         let first = seal(&data).unwrap();

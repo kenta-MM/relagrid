@@ -14,6 +14,22 @@ function output() {
   return { sink, chunks };
 }
 describe('incremental CSV export', () => {
+  it('reports cleanup failure instead of claiming that an incomplete file was removed', async () => {
+    const { sink } = output();
+    sink.write = vi.fn().mockRejectedValue(new Error('write failed'));
+    sink.abort = vi.fn().mockRejectedValue(new Error('delete failed'));
+    await expect(
+      streamGenericCsv(
+        { columns: ['v'], rows: [['1']] },
+        sink,
+        new AbortController().signal,
+        () => {},
+      ),
+    ).rejects.toThrow('一時ファイルの削除も確認できませんでした');
+    expect(sink.finish).not.toHaveBeenCalled();
+    expect(sink.abort).toHaveBeenCalledOnce();
+  });
+
   it('matches the existing CSV bytes including BOM, quoting, NULL, formulas and multiline values', async () => {
     const source = {
       columns: ['a', 'b'],

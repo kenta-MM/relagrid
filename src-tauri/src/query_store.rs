@@ -99,6 +99,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn structurally_valid_but_invalid_ids_are_not_overwritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("queries.json");
+        let query = SavedQuery {
+            id: 0,
+            name: "draft".into(),
+            sql: "SELECT 1".into(),
+            connection_id: 0,
+            connection_label: "未接続".into(),
+            read_only: true,
+        };
+        let invalid = serde_json::to_vec(&vec![query]).unwrap();
+        std::fs::write(&path, &invalid).unwrap();
+        assert!(read(&path).is_err());
+        assert!(write(&path, &[]).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), invalid);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
     fn round_trip_and_failed_write_preserves_previous_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("queries.json");

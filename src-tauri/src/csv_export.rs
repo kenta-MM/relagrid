@@ -321,6 +321,29 @@ pub async fn abort_csv_export(state: State<'_, CsvExportState>, id: String) -> R
 mod tests {
     use super::*;
     #[test]
+    fn protects_spreadsheet_prefixes_without_changing_other_text() {
+        for value in ["=1+1", "+1", "-1", "@SUM(A1)", "\tvalue", "\rvalue"] {
+            assert_eq!(protect_cell(value), format!("'{value}"));
+        }
+        for value in ["", "日本語😀", "O'Brien", "0", "plain,\"text\"\r\n"] {
+            assert_eq!(protect_cell(value), value);
+        }
+    }
+
+    #[test]
+    fn chunk_limit_counts_utf8_bytes_and_accepts_the_exact_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("boundary.csv");
+        let mut file = ExportFile::new(path.clone()).unwrap();
+        let chunk = "😀".repeat(MAX_CHUNK / 4);
+        file.write(&chunk).unwrap();
+        assert!(file.write(&(chunk.clone() + "x")).is_err());
+        // This tests the low-level writer. The IPC handler separately invalidates failed jobs.
+        file.finish().unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), chunk);
+    }
+
+    #[test]
     fn table_cancel_prevents_start_and_completion() {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()

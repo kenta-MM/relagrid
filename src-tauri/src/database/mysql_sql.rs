@@ -128,6 +128,43 @@ pub fn preview_query(table: &Table) -> String {
 mod tests {
     use super::*;
     #[test]
+    fn preview_orders_composite_keys_and_escapes_every_identifier() {
+        let mut table = Table {
+            id: "db.t".into(),
+            schema: "d`b".into(),
+            name: "Order".into(),
+            estimated_rows: None,
+            columns: vec![
+                crate::models::Column {
+                    name: "a`b".into(),
+                    data_type: "bigint".into(),
+                    nullable: false,
+                    primary_key: true,
+                },
+                crate::models::Column {
+                    name: "part".into(),
+                    data_type: "varbinary(8)".into(),
+                    nullable: false,
+                    primary_key: true,
+                },
+                crate::models::Column {
+                    name: "note".into(),
+                    data_type: "text".into(),
+                    nullable: true,
+                    primary_key: false,
+                },
+            ],
+        };
+        assert_eq!(preview_query(&table), "SELECT LEFT(CAST(`a``b` AS CHAR CHARACTER SET utf8mb4), 500) AS `a``b`, LEFT(HEX(`part`), 500) AS `part`, LEFT(CAST(`note` AS CHAR CHARACTER SET utf8mb4), 500) AS `note` FROM `d``b`.`Order` ORDER BY `a``b`, `part` LIMIT 100");
+        table
+            .columns
+            .iter_mut()
+            .for_each(|column| column.primary_key = false);
+        assert!(!preview_query(&table).contains("ORDER BY"));
+        assert!(preview_query(&table).ends_with("LIMIT 100"));
+    }
+
+    #[test]
     fn full_export_has_no_row_limit_and_bounds_each_wire_value() {
         let table = Table {
             id: "db.t".into(),

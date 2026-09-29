@@ -305,6 +305,75 @@ pub async fn execute(
 mod tests {
     use super::*;
     #[test]
+    fn accepts_exact_statement_and_utf8_byte_limits() {
+        assert_eq!(
+            batch_statements(&vec!["SELECT 1"; MAX_RESULTS].join(";"), true, false)
+                .unwrap()
+                .len(),
+            MAX_RESULTS
+        );
+        let prefix = "SELECT '日本語😀' /*";
+        let sql = format!("{prefix}{}*/", "x".repeat(100_000 - prefix.len() - 2));
+        assert_eq!(sql.len(), 100_000);
+        assert!(batch_statements(&sql, true, false).is_ok());
+        assert!(batch_statements(&(sql + " "), true, false).is_err());
+    }
+
+    #[test]
+    fn rejects_session_control_even_on_writable_connections() {
+        for sql in [
+            "SET autocommit=0",
+            "USE other_db",
+            "START TRANSACTION",
+            "BEGIN",
+            "COMMIT",
+            "ROLLBACK",
+            "CALL p()",
+            "PREPARE stmt FROM 'SELECT 1'",
+            "EXECUTE stmt",
+            "LOCK TABLES t WRITE",
+            "UNLOCK TABLES",
+        ] {
+            assert!(batch_statements(sql, false, false).is_err(), "{sql}");
+        }
+        assert!(batch_statements("CREATE TABLE t (id INT)", false, false).is_ok());
+        assert!(batch_statements("CREATE TABLE t (id INT)", true, false).is_err());
+    }
+
+    #[test]
+    fn explain_preserves_original_sql_and_does_not_allow_writes() {
+        let sql = "SELECT '日本語;😀' AS `INTO`";
+        assert_eq!(
+            batch_statements(sql, true, true).unwrap(),
+            [format!("EXPLAIN {sql}")]
+        );
+        assert!(batch_statements("SELECT 1 INTO @value", true, false).is_err());
+        assert!(batch_statements("SELECT 1 INTO OUTFILE '/tmp/test'", false, true).is_err());
+        assert!(batch_statements("/*M! SELECT 1 */", false, false).is_err());
+        assert!(batch_statements("SELECT 'INTO', `INTO` FROM t /* INTO */", true, false).is_ok());
+    }
+
+    #[test]
+    fn retention_accepts_exact_byte_budget_and_counts_null_overhead() {
+        let mut set = empty_set(vec!["v".into()]);
+        let cost = "日".len() + std::mem::size_of::<Option<String>>();
+        let mut bytes = MAX_BYTES - cost;
+        retain_row(&mut set, vec![Some("日".into())], &mut bytes);
+        assert_eq!(bytes, MAX_BYTES);
+        assert_eq!(set.rows.len(), 1);
+        assert!(!set.truncated);
+        retain_row(&mut set, vec![None], &mut bytes);
+        assert_eq!(set.rows.len(), 1);
+        assert!(set.truncated);
+        assert_eq!(bytes, MAX_BYTES);
+        let mut next = empty_set(vec!["null".into()]);
+        bytes = 0;
+        retain_row(&mut next, vec![None], &mut bytes);
+        assert_eq!(bytes, std::mem::size_of::<Option<String>>());
+        assert_eq!(next.rows, vec![vec![None]]);
+    }
+
+    #[test]
     fn batch_uses_parser_boundaries_and_preserves_original_literals() {
         let sql =
             "/* 前置き ; */ SELECT '日本語;😀' AS a;\r\n\tSELECT 'it''s;ok' AS b -- ; ignored\r\n;";

@@ -5,7 +5,7 @@ import { useExplorer } from './useExplorer';
 import { demoSnapshot } from '../../../tests/fixtures/demo';
 import { connectionStore } from '@/data/connection-store';
 import { mysqlGateway } from '@/data/tauri-gateway';
-import type { Preview, SchemaSnapshot } from '@/domain/database';
+import type { Preview, QueryResult, SchemaSnapshot } from '@/domain/database';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -48,6 +48,114 @@ const config = {
 };
 
 describe('explorer request coordination', () => {
+  it.each(['refresh', 'disconnect'] as const)(
+    'preserves the session and cached preview after %s fails, then allows retry',
+    async (operation) => {
+      const cached = { columns: ['order_id'], rows: [['1052']] };
+      vi.spyOn(mysqlGateway, 'preview').mockResolvedValue(cached);
+      const { result } = await connectedExplorer();
+      await act(async () => {
+        await result.current.browse();
+      });
+      const session = result.current.sessionId;
+      vi.mocked(mysqlGateway[operation]).mockRejectedValueOnce(new Error('network unavailable'));
+      await act(async () => {
+        await result.current[operation]();
+      });
+      expect(result.current.mode).toBe('mysql');
+      expect(result.current.snapshot).toBe(demoSnapshot);
+      expect(result.current.sessionId).toBe(session);
+      expect(result.current.busy).toBe(false);
+      expect(result.current.logs.at(-1)).toMatchObject({
+        error: true,
+        message: expect.stringContaining('network unavailable'),
+      });
+      act(() => result.current.select('sales.Customer'));
+      act(() => result.current.select('sales.Order'));
+      expect(result.current.preview).toBe(cached);
+      await act(async () => {
+        await result.current[operation]();
+      });
+      expect(result.current.preview).toBeNull();
+      expect(result.current.busy).toBe(false);
+    },
+  );
+
+  it.each([
+    { readOnly: false, explain: false, fails: false, invalidated: true },
+    { readOnly: false, explain: false, fails: true, invalidated: true },
+    { readOnly: false, explain: true, fails: false, invalidated: false },
+    { readOnly: true, explain: false, fails: false, invalidated: false },
+  ])(
+    'handles preview caches after execution: %j',
+    async ({ readOnly, explain, fails, invalidated }) => {
+      const cached = { columns: ['order_id'], rows: [['1052']] };
+      vi.spyOn(mysqlGateway, 'connect').mockResolvedValue(demoSnapshot);
+      vi.spyOn(mysqlGateway, 'preview').mockResolvedValue(cached);
+      const response: QueryResult = {
+        columns: [],
+        rows: [],
+        affectedRows: 1,
+        elapsedMs: 1,
+        truncated: false,
+        referencedTables: [],
+      };
+      const execute = vi.spyOn(mysqlGateway, 'execute');
+      if (fails) execute.mockRejectedValue(new Error('response lost after write'));
+      else execute.mockResolvedValue(response);
+      const { result } = await readyExplorer();
+      await act(async () => {
+        await result.current.connect({ ...config, readOnly });
+      });
+      act(() => result.current.select('sales.Order'));
+      await act(async () => {
+        await result.current.browse();
+      });
+      await act(async () => {
+        const pending = result.current.execute('SELECT 1', explain, 'execution-id');
+        if (fails) await expect(pending).rejects.toThrow('response lost');
+        else await expect(pending).resolves.toBe(response);
+      });
+      expect(execute).toHaveBeenCalledWith('SELECT 1', explain, 'execution-id');
+      act(() => result.current.select('sales.Customer'));
+      act(() => result.current.select('sales.Order'));
+      expect(result.current.preview).toBe(invalidated ? null : cached);
+      expect(result.current.busy).toBe(false);
+    },
+  );
+
+  it('does not show a stale preview error on the newly selected table', async () => {
+    let reject!: (error: Error) => void;
+    vi.spyOn(mysqlGateway, 'preview').mockReturnValue(
+      new Promise((_, fail) => {
+        reject = fail;
+      }),
+    );
+    const { result } = await connectedExplorer();
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.browse();
+    });
+    act(() => result.current.select('sales.Customer'));
+    const count = result.current.logs.length;
+    await act(async () => {
+      reject(new Error('old table failure'));
+      await pending;
+    });
+    expect(result.current.selected).toBe('sales.Customer');
+    expect(result.current.previewError).toBe('');
+    expect(result.current.previewBusy).toBe(false);
+    expect(result.current.logs).toHaveLength(count);
+  });
+
+  it('rejects execution before connection without invoking the backend', async () => {
+    const execute = vi.spyOn(mysqlGateway, 'execute');
+    const { result } = await readyExplorer();
+    await expect(result.current.execute('SELECT 1')).rejects.toThrow('接続してください');
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.current.busy).toBe(false);
+  });
+
   it('restores saved credentials and groups on startup and connects only on selection', async () => {
     const saved = { ...config, password: 'restored-secret', readOnly: false };
     vi.mocked(connectionStore.load).mockResolvedValue({
