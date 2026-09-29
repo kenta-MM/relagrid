@@ -378,7 +378,7 @@ mod tests {
     #[ignore = "Requires isolated MySQL fixture on 127.0.0.1:3307"]
     fn mysql_fixture_full_table_export() {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
-            let config = crate::models::ConnectionConfig { host: "127.0.0.1".into(), port: 3307, username: "root".into(), password: String::new(), database: "relagrid_fixture".into(), read_only: false };
+            let config = crate::models::ConnectionConfig { host: "127.0.0.1".into(), port: 3307, username: "root".into(), password: String::new(), database: "relagrid_fixture".into(), read_only: false, tls_ca_pem: std::env::var("RELAGRID_TEST_CA_PEM").ok() };
             let pool = crate::database::mysql::connect(&config).await.unwrap();
             sqlx::query("CREATE TABLE CsvExportFixture (id BIGINT UNSIGNED PRIMARY KEY, text_value LONGTEXT, amount DECIMAL(40,12), payload BLOB, nullable_value TEXT, moment TIMESTAMP(6))").execute(&pool).await.unwrap();
             for index in 0..1205u64 {

@@ -2916,6 +2916,7 @@ dependencies = [
  "base64 0.22.1",
  "csv",
  "futures-util",
+ "rustls",
  "serde",
  "serde_json",
  "sqlparser",

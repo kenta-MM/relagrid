@@ -1,25 +1,51 @@
 use super::mysql_sql;
 use crate::models::{Column, ConnectionConfig, Preview, Relationship, SchemaSnapshot, Table};
 use sqlx::{
-    mysql::{MySqlConnectOptions, MySqlPoolOptions},
+    mysql::{MySqlConnectOptions, MySqlPoolOptions, MySqlSslMode},
     MySqlPool, Row,
 };
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-pub async fn connect(config: &ConnectionConfig) -> Result<MySqlPool, String> {
+#[cfg(test)]
+#[path = "tls_tests.rs"]
+mod tls_tests;
+
+fn connection_options(config: &ConnectionConfig) -> Result<MySqlConnectOptions, String> {
     if config.host.trim().is_empty()
         || config.database.trim().is_empty()
         || config.username.is_empty()
     {
         return Err("ホスト、データベース名、ユーザー名を入力してください。".into());
     }
-    let options = MySqlConnectOptions::new()
+    let mut options = MySqlConnectOptions::new()
         .host(&config.host)
         .port(config.port)
         .username(&config.username)
         .password(&config.password)
-        .database(&config.database);
+        .database(&config.database)
+        .ssl_mode(MySqlSslMode::VerifyIdentity);
+    if let Some(pem) = config
+        .tls_ca_pem
+        .as_deref()
+        .filter(|pem| !pem.trim().is_empty())
+    {
+        if pem.len() > 64 * 1024
+            || !pem.contains("-----BEGIN CERTIFICATE-----")
+            || pem.contains("PRIVATE KEY")
+        {
+            return Err(
+                "信頼するCAには64KB以下のPEM証明書を指定してください。秘密鍵は指定できません。"
+                    .into(),
+            );
+        }
+        options = options.ssl_ca_from_pem(pem.as_bytes().to_vec());
+    }
+    Ok(options)
+}
+
+pub async fn connect(config: &ConnectionConfig) -> Result<MySqlPool, String> {
+    let options = connection_options(config)?;
     let read_only = config.read_only;
     MySqlPoolOptions::new()
         .max_connections(3)
@@ -160,6 +186,7 @@ mod tests {
                     password: String::new(),
                     database: "relagrid_fixture".into(),
                     read_only: true,
+                    tls_ca_pem: std::env::var("RELAGRID_TEST_CA_PEM").ok(),
                 };
                 let pool = connect(&config).await.expect("fixture connection");
                 let snapshot = schema(&pool, &config.database).await.expect("schema");
