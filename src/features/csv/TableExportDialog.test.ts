@@ -22,18 +22,25 @@ const table = {
   columns: [{ name: 'v', dataType: 'text', nullable: true, primaryKey: false }],
 };
 function start() {
-  render(createElement(TableExportDialog, { table, close: vi.fn() }));
+  render(
+    createElement(TableExportDialog, {
+      table,
+      sessionId: 'session-a',
+      connectionLabel: 'dev:3306 / db',
+      close: vi.fn(),
+    }),
+  );
   fireEvent.click(screen.getByRole('button', { name: '保存先を選んで全件出力' }));
 }
 it('sends the selected table ID without SQL and reports actual rows rather than estimates', async () => {
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === 'begin_csv_export') return 'job' as never;
     const request = args as {
-      tableId: string;
+      source: { tableId: string; sessionId: string };
       progress: { onmessage(value: { rows: number }): void };
     };
     expect(command).toBe('export_table_csv');
-    expect(request.tableId).toBe(table.id);
+    expect(request.source).toEqual({ tableId: table.id, sessionId: 'session-a' });
     expect(args).not.toHaveProperty('sql');
     request.progress.onmessage({ rows: 1200 });
     return 1205 as never;

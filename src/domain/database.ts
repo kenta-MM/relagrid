@@ -19,6 +19,7 @@ export interface Relationship {
   targetColumn: string;
 }
 export interface SchemaSnapshot {
+  sessionId?: string | null;
   tables: Table[];
   relationships: Relationship[];
 }

@@ -11,7 +11,10 @@ test('exports the selected table independently of the preview limit', async ({ p
         unregisterCallback: () => {},
         invoke: async (
           command: string,
-          args: { tableId?: string; progress?: { onmessage(value: { rows: number }): void } },
+          args: {
+            source?: { tableId: string; sessionId: string };
+            progress?: { onmessage(value: { rows: number }): void };
+          },
         ) => {
           if (command === 'load_queries') return [];
           if (command === 'load_connections') return { connections: [], groups: [] };
@@ -19,6 +22,7 @@ test('exports the selected table independently of the preview limit', async ({ p
           calls.push(command);
           if (command === 'connect_database')
             return {
+              sessionId: 'session-a',
               tables: [
                 {
                   id: 'fixture.target',
@@ -33,7 +37,8 @@ test('exports the selected table independently of the preview limit', async ({ p
           if (command === 'preview_table') return { columns: ['id'], rows: [['1']] };
           if (command === 'begin_csv_export') return 'job';
           if (command === 'export_table_csv') {
-            if (args.tableId !== 'fixture.target') throw new Error('wrong source');
+            if (args.source?.tableId !== 'fixture.target' || args.source.sessionId !== 'session-a')
+              throw new Error('wrong source');
             args.progress?.onmessage({ rows: 1200 });
             return 1205;
           }

@@ -4,7 +4,17 @@ import type { Table } from '@/domain/database';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
-export function TableExportDialog({ table, close }: { table: Table; close(): void }) {
+export function TableExportDialog({
+  table,
+  sessionId,
+  connectionLabel,
+  close,
+}: {
+  table: Table;
+  sessionId: string;
+  connectionLabel: string;
+  close(): void;
+}) {
   const [running, setRunning] = useState(false);
   const [rows, setRows] = useState(0);
   const [message, setMessage] = useState('');
@@ -27,7 +37,11 @@ export function TableExportDialog({ table, close }: { table: Table; close(): voi
     setRows(0);
     setMessage('保存先を選択してください');
     try {
-      const id = await invoke<string | null>('begin_csv_export', { name: `${table.name}.csv` });
+      const source = { sessionId, tableId: table.id };
+      const id = await invoke<string | null>('begin_csv_export', {
+        name: `${table.name}.csv`,
+        source,
+      });
       if (!id) {
         setMessage('保存を取り消しました');
         return;
@@ -41,7 +55,7 @@ export function TableExportDialog({ table, close }: { table: Table; close(): voi
       const progress = new Channel<{ rows: number }>();
       progress.onmessage = (value) => setRows(value.rows);
       setMessage('テーブルから取得して書き出しています');
-      const count = await invoke<number>('export_table_csv', { id, tableId: table.id, progress });
+      const count = await invoke<number>('export_table_csv', { id, source, progress });
       setRows(count);
       setMessage(`${count}件の保存が完了しました`);
     } catch (error) {
@@ -72,6 +86,7 @@ export function TableExportDialog({ table, close }: { table: Table; close(): voi
           を新たに読み取り、全件保存します。プレビューの100件制限は適用しません。
         </DialogDescription>
         <div className="my-4 space-y-3 text-sm">
+          <p>接続先: {connectionLabel}</p>
           <p>列数: {table.columns.length}。総件数は取得完了時に確定します。行順は保証しません。</p>
           <p>
             汎用CSV（UTF-8
