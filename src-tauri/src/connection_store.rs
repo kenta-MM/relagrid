@@ -129,7 +129,7 @@ fn unseal(bytes: &[u8]) -> Result<Connections, String> {
 }
 
 #[cfg(windows)]
-fn os_protect(bytes: &[u8], decrypt: bool) -> Result<Vec<u8>, String> {
+pub(crate) fn os_protect(bytes: &[u8], decrypt: bool) -> Result<Vec<u8>, String> {
     use windows_sys::Win32::{
         Foundation::LocalFree,
         Security::Cryptography::{
@@ -182,7 +182,7 @@ fn os_protect(bytes: &[u8], decrypt: bool) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(windows))]
-fn os_protect(_: &[u8], _: bool) -> Result<Vec<u8>, String> {
+pub(crate) fn os_protect(_: &[u8], _: bool) -> Result<Vec<u8>, String> {
     Err("接続設定の安全な保存はWindows版で利用できます。".into())
 }
 
