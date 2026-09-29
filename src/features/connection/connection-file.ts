@@ -28,6 +28,14 @@ export function parseConnectionFile(text: string): ConnectionConfig {
   if (data.readOnly !== undefined && typeof data.readOnly !== 'boolean') {
     throw new Error('readOnlyにはtrueまたはfalseを指定してください。');
   }
+  if (
+    data.tlsCaPem !== undefined &&
+    (typeof data.tlsCaPem !== 'string' ||
+      data.tlsCaPem.length > 64 * 1024 ||
+      data.tlsCaPem.includes('PRIVATE KEY'))
+  ) {
+    throw new Error('tlsCaPemには64KB以下のCA証明書を指定してください。秘密鍵は指定できません。');
+  }
   return {
     host: (data.host as string).trim(),
     port: data.port as number,
@@ -36,5 +44,6 @@ export function parseConnectionFile(text: string): ConnectionConfig {
     password: (data.password as string | undefined) ?? '',
     group: (data.group as string | undefined)?.trim() || undefined,
     readOnly: (data.readOnly as boolean | undefined) ?? true,
+    ...(data.tlsCaPem ? { tlsCaPem: data.tlsCaPem as string } : {}),
   };
 }

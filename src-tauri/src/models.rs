@@ -10,6 +10,8 @@ pub struct ConnectionConfig {
     pub database: String,
     #[serde(default = "default_read_only")]
     pub read_only: bool,
+    #[serde(default)]
+    pub tls_ca_pem: Option<String>,
 }
 fn default_read_only() -> bool {
     true
