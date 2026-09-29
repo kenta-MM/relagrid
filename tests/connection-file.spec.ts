@@ -87,6 +87,7 @@ test('connection dialog cannot close during a pending connection and recovers af
   await page.getByRole('button', { name: '接続を追加' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('データベース名').fill('fixture');
+  await dialog.getByLabel('ユーザー名').fill('fixture_reader');
   await dialog.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
   await expect.poll(() => typeof reject).toBe('function');
   await expect(dialog.getByRole('button', { name: '接続中…' })).toBeDisabled();

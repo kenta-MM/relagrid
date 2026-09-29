@@ -158,6 +158,7 @@ test('switches independent result sets and displays partial failure without hidi
   await page.goto('/');
   await page.getByRole('button', { name: '接続を追加' }).click();
   await page.getByLabel('データベース名').fill('fixture');
+  await page.getByLabel('ユーザー名').fill('fixture_reader');
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
   await page.getByRole('button', { name: 'SQL', exact: true }).click();
   const editor = page.getByRole('textbox', { name: 'SQLクエリ' });

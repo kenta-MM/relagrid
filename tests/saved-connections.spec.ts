@@ -39,6 +39,7 @@ test('saves connections and restores the list on restart without auto-connecting
   await expect(page.locator('.connection-item')).toHaveCount(0);
   await page.getByRole('button', { name: '接続を追加' }).click();
   await page.getByLabel('データベース名').fill('persisted');
+  await page.getByLabel('ユーザー名').fill('fixture_reader');
   await page.getByLabel('パスワード', { exact: true }).fill('test-only-secret');
   await page.getByLabel('グループ名（任意）').fill('開発');
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();

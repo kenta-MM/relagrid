@@ -8,6 +8,7 @@ try {
   await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('ポート').fill('3307');
   await page.getByLabel('データベース名').fill('relagrid_fixture');
+  await page.getByLabel('ユーザー名').fill('root');
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   await verifyGrouping(page, 'relagrid_fixture', 2);
