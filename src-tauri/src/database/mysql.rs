@@ -45,14 +45,16 @@ pub async fn connect(config: &ConnectionConfig) -> Result<MySqlPool, String> {
 }
 
 pub async fn schema(pool: &MySqlPool, database: &str) -> Result<SchemaSnapshot, String> {
+    // Cancellation drops this socket instead of returning an unfinished reader to the pool.
+    let mut connection = pool.acquire().await.map_err(db_error)?.detach();
     let table_rows = sqlx::query(mysql_sql::TABLES)
         .bind(database)
-        .fetch_all(pool)
+        .fetch_all(&mut connection)
         .await
         .map_err(db_error)?;
     let column_rows = sqlx::query(mysql_sql::COLUMNS)
         .bind(database)
-        .fetch_all(pool)
+        .fetch_all(&mut connection)
         .await
         .map_err(db_error)?;
     let mut columns_by_table: HashMap<String, Vec<Column>> = HashMap::new();
@@ -89,7 +91,7 @@ pub async fn schema(pool: &MySqlPool, database: &str) -> Result<SchemaSnapshot, 
     let foreign_keys = sqlx::query(mysql_sql::RELATIONSHIPS)
         .bind(database)
         .bind(database)
-        .fetch_all(pool)
+        .fetch_all(&mut connection)
         .await
         .map_err(db_error)?;
     let mut relationships = Vec::new();
@@ -120,9 +122,10 @@ pub async fn schema(pool: &MySqlPool, database: &str) -> Result<SchemaSnapshot, 
 }
 
 pub async fn preview(pool: &MySqlPool, table: &Table) -> Result<Preview, String> {
+    let mut connection = pool.acquire().await.map_err(db_error)?.detach();
     let query = mysql_sql::preview_query(table);
     let result = sqlx::query(&query)
-        .fetch_all(pool)
+        .fetch_all(&mut connection)
         .await
         .map_err(db_error)?;
     let rows = result

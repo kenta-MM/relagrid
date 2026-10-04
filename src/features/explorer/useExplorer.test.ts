@@ -48,6 +48,72 @@ const config = {
 };
 
 describe('explorer request coordination', () => {
+  it('disconnects during refresh and ignores its late result without unlocking a newer operation', async () => {
+    const { result } = await connectedExplorer();
+    const refreshResponse = deferred<SchemaSnapshot>();
+    vi.mocked(mysqlGateway.refresh).mockReturnValueOnce(refreshResponse.promise);
+    vi.spyOn(mysqlGateway, 'disconnect').mockResolvedValue();
+    let refreshing!: Promise<void>;
+    act(() => {
+      refreshing = result.current.refresh();
+    });
+    expect(result.current.readBusy).toBe(true);
+    await act(async () => {
+      await result.current.disconnect();
+    });
+    expect(result.current.mode).toBe('disconnected');
+    const nextResponse = deferred<SchemaSnapshot>();
+    vi.mocked(mysqlGateway.connect).mockReturnValueOnce(nextResponse.promise);
+    let connecting!: Promise<void>;
+    act(() => {
+      connecting = result.current.connect({ ...config, database: 'next' });
+    });
+    await act(async () => {
+      refreshResponse.resolve(demoSnapshot);
+      await refreshing;
+    });
+    expect(result.current.mode).toBe('disconnected');
+    expect(result.current.busy).toBe(true);
+    await act(async () => {
+      nextResponse.resolve(demoSnapshot);
+      await connecting;
+    });
+    expect(result.current.database).toBe('next');
+    expect(result.current.busy).toBe(false);
+  });
+
+  it('does not reconnect or save a late connection response after disconnect', async () => {
+    const { result } = await readyExplorer();
+    const response = deferred<SchemaSnapshot>();
+    vi.spyOn(mysqlGateway, 'connect').mockReturnValueOnce(response.promise);
+    vi.spyOn(mysqlGateway, 'disconnect').mockResolvedValue();
+    let connection!: Promise<void>;
+    let outcome!: Promise<unknown>;
+    act(() => {
+      connection = result.current.connect(config);
+      outcome = connection.catch((error) => error);
+    });
+    await act(async () => {
+      await result.current.disconnect();
+    });
+    await act(async () => {
+      response.resolve(demoSnapshot);
+      await outcome;
+    });
+    expect(result.current.mode).toBe('disconnected');
+    expect(result.current.snapshot.tables).toEqual([]);
+    expect(connectionStore.save).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed read cancellation without clearing the current connection', async () => {
+    const { result } = await connectedExplorer();
+    vi.spyOn(mysqlGateway, 'cancelReads').mockRejectedValue(new Error('unavailable'));
+    await act(async () => {
+      await expect(result.current.cancelReads()).rejects.toThrow('unavailable');
+    });
+    expect(result.current.mode).toBe('mysql');
+    expect(result.current.logs.at(-1)?.message).toContain('中断要求に失敗');
+  });
   it.each(['refresh', 'disconnect'] as const)(
     'preserves the session and cached preview after %s fails, then allows retry',
     async (operation) => {

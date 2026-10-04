@@ -31,6 +31,8 @@ interface Props {
   onSelectConnection(id: number): void;
   mode: string;
   busy: boolean;
+  readBusy?: boolean;
+  onCancelRead?(): void;
   readOnly: boolean;
   onSelect(id: string): void;
   onConnect(): void;
@@ -53,6 +55,8 @@ export function Sidebar({
   onSelectConnection,
   mode,
   busy,
+  readBusy,
+  onCancelRead,
   readOnly,
   onSelect,
   onConnect,
@@ -283,9 +287,21 @@ export function Sidebar({
       </nav>
       <div className="sidebar-bottom">
         {mode === 'mysql' && (
-          <Button variant="ghost" className="w-full mt-3" disabled={busy} onClick={onDisconnect}>
-            切断
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              className="w-full mt-3"
+              disabled={busy && !readBusy}
+              onClick={onDisconnect}
+            >
+              切断
+            </Button>
+            {readBusy && (
+              <Button variant="outline" className="w-full mt-2" onClick={onCancelRead}>
+                読み込みを中断
+              </Button>
+            )}
+          </>
         )}
         <div className="sidebar-version">
           RelaGrid <span>v0.1.0</span>

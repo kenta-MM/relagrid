@@ -63,6 +63,7 @@ export interface DatabaseGateway {
   disconnect(): Promise<void>;
   execute(sql: string, explain?: boolean, executionId?: string): Promise<QueryResult>;
   cancel?(executionId: string): Promise<void>;
+  cancelReads?(): Promise<void>;
 }
 export function relatedTableIds(snapshot: SchemaSnapshot, tableId: string): Set<string> {
   const result = new Set([tableId]);

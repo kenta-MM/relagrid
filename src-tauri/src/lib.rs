@@ -3,6 +3,7 @@ mod csv_export;
 mod database;
 mod models;
 mod query_store;
+mod read_operations;
 
 use models::{ConnectionConfig, Preview, QueryResult, SchemaSnapshot};
 use sqlx::MySqlPool;
@@ -19,6 +20,7 @@ struct Session {
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 #[derive(Default)]
 struct AppState {
+    reads: read_operations::ReadOperations,
     session: Mutex<Option<Session>>,
     execution: Mutex<Option<(String, oneshot::Sender<()>)>>,
 }
@@ -28,49 +30,96 @@ async fn connect_database(
     config: ConnectionConfig,
     state: State<'_, AppState>,
 ) -> Result<SchemaSnapshot, String> {
-    let mut session = state.session.lock().await;
-    let pool = database::mysql::connect(&config).await?;
-    let mut snapshot = match database::mysql::schema(&pool, &config.database).await {
-        Ok(snapshot) => snapshot,
-        Err(error) => {
-            pool.close().await;
-            return Err(error);
-        }
-    };
-    snapshot.session_id = Some(NEXT_SESSION.fetch_add(1, Ordering::Relaxed).to_string());
-    let old = session.replace(Session {
-        pool,
-        database: config.database,
-        snapshot: snapshot.clone(),
-        read_only: config.read_only,
-    });
-    if let Some(old) = old {
-        old.pool.close().await;
-    }
-    Ok(snapshot)
+    let mut ticket = state.reads.register()?;
+    let epoch = ticket.epoch();
+    ticket
+        .run(
+            async {
+                let pool = database::mysql::connect(&config).await?;
+                let mut snapshot = database::mysql::schema(&pool, &config.database).await?;
+                snapshot.session_id =
+                    Some(NEXT_SESSION.fetch_add(1, Ordering::Relaxed).to_string());
+                let mut session = state.session.lock().await;
+                let old = state.reads.publish(epoch, || {
+                    session.replace(Session {
+                        pool,
+                        database: config.database,
+                        snapshot: snapshot.clone(),
+                        read_only: config.read_only,
+                    })
+                })?;
+                drop(session);
+                if let Some(old) = old {
+                    tauri::async_runtime::spawn(async move { old.pool.close().await });
+                }
+                Ok(snapshot)
+            },
+            read_operations::READ_TIMEOUT,
+        )
+        .await
 }
 
 #[tauri::command]
 async fn refresh_schema(state: State<'_, AppState>) -> Result<SchemaSnapshot, String> {
-    let mut guard = state.session.lock().await;
-    let session = guard.as_mut().ok_or("データベースに接続してください。")?;
-    let mut snapshot = database::mysql::schema(&session.pool, &session.database).await?;
-    snapshot.session_id.clone_from(&session.snapshot.session_id);
-    session.snapshot = snapshot.clone();
-    Ok(snapshot)
+    let mut ticket = state.reads.register()?;
+    let epoch = ticket.epoch();
+    ticket
+        .run(
+            async {
+                let (pool, database, session_id) = {
+                    let guard = state.session.lock().await;
+                    let session = guard.as_ref().ok_or("データベースに接続してください。")?;
+                    (
+                        session.pool.clone(),
+                        session.database.clone(),
+                        session.snapshot.session_id.clone(),
+                    )
+                };
+                let mut snapshot = database::mysql::schema(&pool, &database).await?;
+                snapshot.session_id.clone_from(&session_id);
+                let mut guard = state.session.lock().await;
+                let session = guard
+                    .as_mut()
+                    .filter(|session| session.snapshot.session_id == session_id)
+                    .ok_or("接続先が変更されました。再読み込みしてください。")?;
+                state
+                    .reads
+                    .publish(epoch, || session.snapshot = snapshot.clone())?;
+                Ok(snapshot)
+            },
+            read_operations::READ_TIMEOUT,
+        )
+        .await
 }
 
 #[tauri::command]
 async fn preview_table(table_id: String, state: State<'_, AppState>) -> Result<Preview, String> {
-    let guard = state.session.lock().await;
-    let session = guard.as_ref().ok_or("データベースに接続してください。")?;
-    let table = session
-        .snapshot
-        .tables
-        .iter()
-        .find(|table| table.id == table_id)
-        .ok_or("この接続に存在しないテーブルです。スキーマを更新してください。")?;
-    database::mysql::preview(&session.pool, table).await
+    let mut ticket = state.reads.register()?;
+    ticket
+        .run(
+            async {
+                let (pool, table) = {
+                    let guard = state.session.lock().await;
+                    let session = guard.as_ref().ok_or("データベースに接続してください。")?;
+                    let table = session
+                        .snapshot
+                        .tables
+                        .iter()
+                        .find(|table| table.id == table_id)
+                        .ok_or("この接続に存在しないテーブルです。スキーマを更新してください。")?
+                        .clone();
+                    (session.pool.clone(), table)
+                };
+                database::mysql::preview(&pool, &table).await
+            },
+            read_operations::READ_TIMEOUT,
+        )
+        .await
+}
+
+#[tauri::command]
+async fn cancel_database_reads(state: State<'_, AppState>) -> Result<(), String> {
+    state.reads.cancel_all()
 }
 
 #[tauri::command]
@@ -133,8 +182,10 @@ fn cancel_matching(execution: &mut Option<(String, oneshot::Sender<()>)>, execut
 
 #[tauri::command]
 async fn disconnect_database(state: State<'_, AppState>) -> Result<(), String> {
-    if let Some(session) = state.session.lock().await.take() {
-        session.pool.close().await;
+    state.reads.cancel_all()?;
+    let old = state.session.lock().await.take();
+    if let Some(session) = old {
+        tauri::async_runtime::spawn(async move { session.pool.close().await });
     }
     Ok(())
 }
@@ -156,6 +207,7 @@ pub fn run() {
             preview_table,
             execute_query,
             cancel_query,
+            cancel_database_reads,
             csv_export::begin_csv_export,
             csv_export::write_csv_export,
             csv_export::finish_csv_export,
