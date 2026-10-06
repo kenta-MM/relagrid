@@ -23,6 +23,8 @@ vi.mock('./SqlEditor', () => ({
     ),
 }));
 afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
   cleanup();
   document.body.replaceChildren();
   vi.restoreAllMocks();
@@ -265,6 +267,63 @@ async function setup(execute = vi.fn().mockResolvedValue(result)) {
 const click = (name: string, role = 'button') =>
   fireEvent.click(screen.getAllByRole(role, { name })[0]);
 
+it('requires writable SQL confirmation for clicks and shortcuts with exact target and SQL', async () => {
+  const execute = vi.fn().mockResolvedValue(result);
+  const { props, rerender } = await setup(execute);
+  rerender(
+    createElement(QueryWorkspace, {
+      ...props,
+      readOnly: false,
+      connectionLabel: 'production.example:3306 / orders',
+    }),
+  );
+  const editor = screen.getByRole('textbox', { name: 'SQLクエリ' });
+  fireEvent.change(editor, { target: { value: 'DELETE FROM orders;' } });
+  click('実行');
+  expect(execute).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog').textContent).toContain('production.example:3306 / orders');
+  expect(screen.getByRole('dialog').textContent).toContain('DELETE FROM orders;');
+  click('キャンセル');
+  expect(execute).not.toHaveBeenCalled();
+  fireEvent.keyDown(editor, { key: 'F5' });
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  click('キャンセル');
+  fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true });
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  await act(async () => click('接続先とSQLを確認して実行'));
+  expect(execute).toHaveBeenCalledTimes(1);
+  expect(execute).toHaveBeenCalledWith('DELETE FROM orders;', false, expect.any(String));
+});
+
+it('does not execute a stale writable confirmation after the connection changes', async () => {
+  const execute = vi.fn().mockResolvedValue(result);
+  const { props, rerender } = await setup(execute);
+  rerender(createElement(QueryWorkspace, { ...props, readOnly: false }));
+  click('実行');
+  rerender(
+    createElement(QueryWorkspace, {
+      ...props,
+      readOnly: false,
+      connectionId: 2,
+      connectionLabel: 'DB B',
+    }),
+  );
+  await act(async () => click('接続先とSQLを確認して実行'));
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it('does not execute SQL edited after opening its writable confirmation', async () => {
+  const execute = vi.fn().mockResolvedValue(result);
+  const { props, rerender } = await setup(execute);
+  rerender(createElement(QueryWorkspace, { ...props, readOnly: false }));
+  const editor = screen.getByRole('textbox', { name: 'SQLクエリ' });
+  click('実行');
+  expect(document.activeElement?.textContent).toBe('キャンセル');
+  fireEvent.change(editor, { target: { value: 'DROP TABLE changed;' } });
+  await act(async () => click('接続先とSQLを確認して実行'));
+  expect(execute).not.toHaveBeenCalled();
+});
+
 it('routes a delayed result to its owner and blocks duplicate execution before busy propagates', async () => {
   const pending = deferred();
   const execute = vi.fn().mockReturnValue(pending.promise);
@@ -433,8 +492,15 @@ it('distinguishes empty table metadata and updates and exports only the selected
   });
   click('エクスポート');
   expect(screen.getByRole('dialog').textContent).toContain('全件出力ではありません');
-  click('保存先を選んで出力');
-  await waitFor(() => expect(filename).toBe('Query 1-result-2.csv'));
+  // Export yields once per row. Drive those timers explicitly so CPU contention
+  // cannot exhaust waitFor's default one-second deadline during a full suite.
+  vi.useFakeTimers();
+  await act(async () => {
+    click('保存先を選んで出力');
+    await vi.runAllTimersAsync();
+  });
+  vi.useRealTimers();
+  expect(filename).toBe('Query 1-result-2.csv');
   const text = await new Promise<string>((resolve) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));

@@ -182,7 +182,10 @@ mod tests {
             .block_on(async {
                 let config = ConnectionConfig {
                     host: "127.0.0.1".into(),
-                    port: 3307,
+                    port: std::env::var("RELAGRID_TEST_PORT")
+                        .ok()
+                        .map(|value| value.parse::<u16>().expect("fixture port"))
+                        .unwrap_or(3307),
                     username: "root".into(),
                     password: String::new(),
                     database: "relagrid_fixture".into(),
@@ -257,7 +260,7 @@ mod tests {
                 pool.close().await;
                 let writable = connect(&ConnectionConfig {
                     read_only: false,
-                    ..config
+                    ..config.clone()
                 })
                 .await
                 .unwrap();
@@ -283,27 +286,20 @@ mod tests {
                     &writable,
                     "SELECT '日本語;😀' AS a; UPDATE Customer SET name=name WHERE customer_id=1; SELECT name, email FROM Customer WHERE 0",
                     false, false,
-                ).await.unwrap();
-                assert!(batch.error.is_none());
-                assert_eq!(batch.result_sets.len(), 3);
-                assert_eq!(batch.result_sets[0].rows[0][0].as_deref(), Some("日本語;😀"));
-                assert!(batch.result_sets[1].columns.is_empty());
-                assert_eq!(batch.result_sets[1].affected_rows, 1);
-                assert_eq!(batch.result_sets[2].columns, ["name", "email"]);
-                assert!(batch.result_sets[2].rows.is_empty());
-                assert!(batch.result_sets.iter().all(|s| s.complete));
+                ).await.err().expect("write batch must be refused");
+                assert!(batch.contains("トランザクション"));
 
                 let partial = crate::database::query::execute(
                     &writable,
                     "SELECT 1 AS before_error; INSERT INTO Customer(customer_id) VALUES (1); SELECT 2 AS never_executed",
                     false, false,
-                ).await.unwrap();
-                assert!(partial.error.as_ref().unwrap().contains("文2"));
-                assert_eq!(partial.result_sets.len(), 1);
-                assert!(partial.result_sets[0].complete);
+                ).await.err().expect("write batch must be refused");
+                assert!(partial.contains("トランザクション"));
+
+                let readonly = connect(&config).await.expect("readonly fixture connection");
 
                 let limited = crate::database::query::execute(
-                    &writable,
+                    &readonly,
                     "WITH RECURSIVE n AS (SELECT 0 AS v UNION ALL SELECT v+1 FROM n WHERE v<31) SELECT a.v FROM n a CROSS JOIN n b; SELECT 9 AS tail",
                     true, false,
                 ).await.unwrap();
@@ -313,7 +309,7 @@ mod tests {
                 assert_eq!(limited.result_sets[1].rows[0][0].as_deref(), Some("9"));
 
                 let wide = crate::database::query::execute(
-                    &writable,
+                    &readonly,
                     "WITH RECURSIVE n AS (SELECT 0 AS v UNION ALL SELECT v+1 FROM n WHERE v<31) SELECT REPEAT('x',5000), REPEAT('y',5000) FROM n a CROSS JOIN n b; SELECT 1 AS tail",
                     true, false,
                 ).await.unwrap();
@@ -323,13 +319,14 @@ mod tests {
                 assert_eq!(wide.result_sets.len(), 2);
 
                 let (sender, receiver) = tokio::sync::oneshot::channel();
-                let operation = crate::cancellable(crate::database::query::execute(&writable, "SELECT SLEEP(10)", true, false), receiver);
+                let operation = crate::cancellable(crate::database::query::execute(&readonly, "SELECT SLEEP(10)", true, false), receiver);
                 let (cancelled, ()) = futures_util::future::join(operation, async {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     let _ = sender.send(());
                 }).await;
                 assert!(cancelled.err().unwrap().contains("中断"));
-                assert!(crate::database::query::execute(&writable, "SELECT 1", true, false).await.unwrap().error.is_none());
+                assert!(crate::database::query::execute(&readonly, "SELECT 1", true, false).await.unwrap().error.is_none());
+                readonly.close().await;
                 writable.close().await;
             });
     }
