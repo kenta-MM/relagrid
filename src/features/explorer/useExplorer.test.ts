@@ -66,6 +66,7 @@ describe('explorer request coordination', () => {
       expect(result.current.snapshot).toBe(demoSnapshot);
       expect(result.current.sessionId).toBe(session);
       expect(result.current.busy).toBe(false);
+      expect(result.current.preview).toBe(cached);
       expect(result.current.logs.at(-1)).toMatchObject({
         error: true,
         message: expect.stringContaining('network unavailable'),

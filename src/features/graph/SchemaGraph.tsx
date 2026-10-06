@@ -28,6 +28,12 @@ function Graph({ snapshot, selected, relatedOnly, onSelect }: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<TableGraphNode>([]);
   const { fitView } = useReactFlow();
   useEffect(() => {
+    const foreignKeys = new Map<string, string[]>();
+    for (const relation of snapshot.relationships) {
+      const columns = foreignKeys.get(relation.sourceTable) ?? [];
+      columns.push(relation.sourceColumn);
+      foreignKeys.set(relation.sourceTable, columns);
+    }
     setNodes(
       snapshot.tables.map((table, index) => ({
         id: table.id,
@@ -35,9 +41,7 @@ function Graph({ snapshot, selected, relatedOnly, onSelect }: Props) {
         position: positions.get(table.id)!,
         data: {
           table,
-          foreignKeys: snapshot.relationships
-            .filter((r) => r.sourceTable === table.id)
-            .map((r) => r.sourceColumn),
+          foreignKeys: foreignKeys.get(table.id) ?? [],
           color: colors[index % colors.length],
           muted: false,
         },

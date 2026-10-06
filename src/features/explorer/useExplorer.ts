@@ -236,7 +236,6 @@ export function useExplorer() {
   async function refresh() {
     if (mode !== 'mysql') return;
     if (!beginOperation()) return;
-    invalidatePreview();
     try {
       const next = await gateway.current.refresh();
       accept(next);
