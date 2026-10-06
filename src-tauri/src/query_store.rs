@@ -1,6 +1,48 @@
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use std::{io::Write, path::Path, sync::Mutex};
 use tauri::Manager;
+use zeroize::Zeroizing;
+
+const FORMAT: &str = "relagrid-queries-v1-dpapi";
+const INVALID: &str = "保存クエリを復元できません。ファイルの破損またはWindowsユーザーの違いを確認してください。元のファイルは保持されます。";
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Envelope {
+    format: String,
+    payload: String,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StoredQueries {
+    Encrypted(Envelope),
+    Legacy(Vec<SavedQuery>),
+}
+
+fn seal(data: &[SavedQuery]) -> Result<Vec<u8>, String> {
+    validate(data)?;
+    let plaintext = Zeroizing::new(serde_json::to_vec(data).map_err(|_| INVALID)?);
+    let encrypted = crate::connection_store::os_protect(&plaintext, false).map_err(|_| INVALID)?;
+    serde_json::to_vec_pretty(&Envelope {
+        format: FORMAT.into(),
+        payload: STANDARD.encode(encrypted),
+    })
+    .map_err(|_| INVALID.into())
+}
+
+fn unseal(envelope: Envelope) -> Result<Vec<SavedQuery>, String> {
+    if envelope.format != FORMAT {
+        return Err(INVALID.into());
+    }
+    let encrypted = STANDARD.decode(envelope.payload).map_err(|_| INVALID)?;
+    let plaintext =
+        Zeroizing::new(crate::connection_store::os_protect(&encrypted, true).map_err(|_| INVALID)?);
+    let data: Vec<SavedQuery> = serde_json::from_slice(&plaintext).map_err(|_| INVALID)?;
+    validate(&data)?;
+    Ok(data)
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,10 +72,16 @@ fn validate(data: &[SavedQuery]) -> Result<(), String> {
 fn read(path: &Path) -> Result<Vec<SavedQuery>, String> {
     match std::fs::read(path) {
         Ok(bytes) => {
-            let data: Vec<SavedQuery> = serde_json::from_slice(&bytes)
-                .map_err(|_| "保存クエリの形式が不正です。元のファイルは保持されます。")?;
-            validate(&data)?;
-            Ok(data)
+            let bytes = Zeroizing::new(bytes);
+            match serde_json::from_slice::<StoredQueries>(&bytes).map_err(|_| INVALID)? {
+                StoredQueries::Encrypted(envelope) => unseal(envelope),
+                StoredQueries::Legacy(data) => {
+                    // Do not expose a successful load until the plaintext file is replaced.
+                    let encrypted = seal(&data)?;
+                    persist(path, &encrypted)?;
+                    Ok(data)
+                }
+            }
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(vec![]),
         Err(error) => Err(format!("保存クエリを読み込めません: {error}")),
@@ -42,12 +90,15 @@ fn read(path: &Path) -> Result<Vec<SavedQuery>, String> {
 
 fn write(path: &Path, data: &[SavedQuery]) -> Result<(), String> {
     read(path)?;
-    validate(data)?;
+    let bytes = seal(data)?;
+    persist(path, &bytes)
+}
+
+fn persist(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path.parent().ok_or("クエリの保存先が不正です。")?;
     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let bytes = serde_json::to_vec_pretty(data).map_err(|error| error.to_string())?;
     let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
-    file.write_all(&bytes)
+    file.write_all(bytes)
         .and_then(|_| file.as_file().sync_all())
         .map_err(|error| error.to_string())?;
     file.persist(path).map_err(|error| error.to_string())?;
@@ -94,9 +145,80 @@ pub fn save_queries(
     write(&path, &data)
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
+
+    fn sample() -> Vec<SavedQuery> {
+        vec![SavedQuery {
+            id: 1,
+            name: "Private query".into(),
+            sql: "SELECT 'secret-日本語-token'".into(),
+            connection_id: 8,
+            connection_label: "private-host".into(),
+            read_only: true,
+        }]
+    }
+
+    #[test]
+    fn encrypts_all_fields_and_migrates_without_plaintext_temporary_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("queries.json");
+        let data = sample();
+        std::fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        assert_eq!(read(&path).unwrap()[0].sql, data[0].sql);
+        let bytes = std::fs::read(&path).unwrap();
+        let text = String::from_utf8_lossy(&bytes);
+        for secret in ["secret-", "Private query", "private-host", "SELECT"] {
+            assert!(!text.contains(secret));
+        }
+        assert!(text.contains(FORMAT));
+        assert_eq!(read(&path).unwrap()[0].connection_id, 8);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        write(&path, &[]).unwrap();
+        assert!(read(&path).unwrap().is_empty());
+    }
+
+    #[test]
+    fn tampering_and_unknown_version_never_overwrite_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("queries.json");
+        for version in [FORMAT, "unknown"] {
+            let mut envelope: Envelope = serde_json::from_slice(&seal(&sample()).unwrap()).unwrap();
+            envelope.format = version.into();
+            if version == FORMAT {
+                let mut encrypted = STANDARD.decode(&envelope.payload).unwrap();
+                let last = encrypted.len() - 1;
+                encrypted[last] ^= 1;
+                envelope.payload = STANDARD.encode(encrypted);
+            }
+            let corrupted = serde_json::to_vec(&envelope).unwrap();
+            std::fs::write(&path, &corrupted).unwrap();
+            assert!(read(&path).is_err());
+            assert!(write(&path, &sample()).is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), corrupted);
+        }
+    }
+
+    #[test]
+    fn failed_migration_preserves_plaintext_and_removes_temporary_file() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("queries.json");
+        let original = serde_json::to_vec(&sample()).unwrap();
+        std::fs::write(&path, &original).unwrap();
+        // Permit reads but deny file replacement to simulate a failed migration.
+        let locked = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&path)
+            .unwrap();
+        assert!(read(&path).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        drop(locked);
+        assert!(read(&path).is_ok());
+    }
 
     #[test]
     fn structurally_valid_but_invalid_ids_are_not_overwritten() {
