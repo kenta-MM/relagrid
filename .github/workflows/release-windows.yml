@@ -1,0 +1,84 @@
+name: Signed Windows release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    # Dedicated, ephemeral runner with a hardware-backed signing provider; never run PR jobs here.
+    runs-on: [self-hosted, Windows, X64, relagrid-signing]
+    environment: windows-production
+    permissions:
+      contents: write
+    env:
+      WINDOWS_SIGNING_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_THUMBPRINT }}
+      WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate release version and signing prerequisites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -cne "v$version") { throw 'Tag does not match application version.' }
+          if ($env:WINDOWS_SIGNING_THUMBPRINT -notmatch '^[A-Fa-f0-9]{40}$') { throw 'Missing signing certificate identity.' }
+          if ($env:WINDOWS_TIMESTAMP_URL -notmatch '^https://') { throw 'Missing HTTPS timestamp service.' }
+          Get-Command signtool.exe -ErrorAction Stop | Out-Null
+          Get-Command gh.exe -ErrorAction Stop | Out-Null
+          Get-Command 7z.exe -ErrorAction Stop | Out-Null
+          $certificate = Get-Item "Cert:/CurrentUser/My/$env:WINDOWS_SIGNING_THUMBPRINT"
+          if (-not $certificate.HasPrivateKey) { throw 'Signing key unavailable.' }
+          rustup show active-toolchain
+          if ($LASTEXITCODE -ne 0) { throw 'Provision the repository Rust toolchain.' }
+          $config = @{ bundle = @{ windows = @{ signCommand = @{ cmd = 'pwsh'; args = @('-NoProfile', '-File', "$env:GITHUB_WORKSPACE/scripts/windows/Sign-Artifact.ps1", '%1') } } } }
+          $config | ConvertTo-Json -Depth 8 | Set-Content release-signing.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build:desktop -- --config release-signing.json
+      - name: Verify every published artifact and tampering rejection
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Get-Item src-tauri/target/release/relagrid.exe
+          $installers = @(Get-ChildItem src-tauri/target/release/bundle/nsis -Filter '*-setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one NSIS installer.' }
+          $files = @($app.FullName, $installers[0].FullName)
+          ./scripts/windows/Verify-Signature.ps1 -Path $files -ExpectedThumbprint $env:WINDOWS_SIGNING_THUMBPRINT
+          # Inspect the installer payload without running an installer on the signing runner.
+          $extraction = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString())
+          try {
+            & 7z.exe x $installers[0].FullName "-o$extraction" -y | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'NSIS payload extraction failed.' }
+            $embedded = @(Get-ChildItem -LiteralPath $extraction -Recurse -File -Filter 'relagrid.exe')
+            if ($embedded.Count -ne 1) { throw 'Expected exactly one embedded application executable.' }
+            ./scripts/windows/Verify-Signature.ps1 -Path $embedded[0].FullName -ExpectedThumbprint $env:WINDOWS_SIGNING_THUMBPRINT
+            if ((Get-FileHash -LiteralPath $embedded[0].FullName -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $app.FullName -Algorithm SHA256).Hash) { throw 'Installer application differs from the verified standalone application.' }
+          } finally {
+            $resolvedExtraction = [IO.Path]::GetFullPath($extraction)
+            $tempRoot = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+            if (-not $resolvedExtraction.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Extraction cleanup escaped runner temporary directory.' }
+            if (Test-Path -LiteralPath $resolvedExtraction) { Remove-Item -LiteralPath $resolvedExtraction -Recurse -Force }
+          }
+          foreach ($file in $files) { ./scripts/windows/Test-Tampering.ps1 -Path $file -ExpectedThumbprint $env:WINDOWS_SIGNING_THUMBPRINT }
+          New-Item -ItemType Directory -Path release-artifacts | Out-Null
+          Copy-Item -LiteralPath $files -Destination release-artifacts
+          Get-ChildItem release-artifacts -Filter '*.exe' | ForEach-Object { "$( (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash )  $($_.Name)" } | Set-Content release-artifacts/SHA256SUMS.txt
+          "Signer certificate SHA-1 thumbprint: $env:WINDOWS_SIGNING_THUMBPRINT" | Set-Content release-artifacts/SIGNER.txt
+      - name: Publish verified artifacts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $assets = @(Get-ChildItem release-artifacts -File | ForEach-Object { $_.FullName })
+          gh release create $env:GITHUB_REF_NAME @assets --verify-tag --title "RelaGrid $env:GITHUB_REF_NAME" --notes "Windows artifacts have been Authenticode signed and verified. See docs/windows-release.md for verification instructions."
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
