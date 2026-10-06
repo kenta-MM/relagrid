@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source('.');
 @import './styles/shell.css';
 @import './styles/sidebar.css';
 @import './styles/graph.css';
