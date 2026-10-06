@@ -40,6 +40,7 @@ export function useExplorer() {
   // Cache belongs to this connection/schema session and never persists to disk.
   const previewsByTable = useRef(new Map<string, Preview>());
   const revision = useRef(0);
+  const previewRequest = useRef<number | null>(null);
   const operationInFlight = useRef(false);
   const logId = useRef(1);
   const log = useCallback((message: string, error = false) => {
@@ -265,10 +266,13 @@ export function useExplorer() {
     }
   }
   async function browse() {
-    if (operationInFlight.current) return;
+    // Gate synchronously: disabled buttons may not have rendered yet. A new
+    // selection increments revision, so it can still start its own request.
+    if (operationInFlight.current || previewRequest.current === revision.current) return;
     const table = snapshot.tables.find((t) => t.id === selected);
     if (!table) return;
     const request = ++revision.current;
+    previewRequest.current = request;
     setPreviewBusy(true);
     setPreviewError('');
     setPreview(null);
@@ -284,6 +288,7 @@ export function useExplorer() {
         log(String(error), true);
       }
     } finally {
+      if (previewRequest.current === request) previewRequest.current = null;
       if (request === revision.current) setPreviewBusy(false);
     }
   }

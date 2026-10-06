@@ -48,6 +48,67 @@ const config = {
 };
 
 describe('explorer request coordination', () => {
+  it('deduplicates preview requests before disabled buttons render and allows retry', async () => {
+    const response = deferred<Preview>();
+    const preview = vi.spyOn(mysqlGateway, 'preview').mockReturnValue(response.promise);
+    const { result } = await connectedExplorer();
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.browse();
+      void result.current.browse();
+    });
+    expect(preview).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      response.resolve({ columns: ['id'], rows: [['1']] });
+      await pending;
+    });
+    preview.mockRejectedValueOnce(new Error('preview unavailable'));
+    await act(async () => {
+      await result.current.browse();
+    });
+    expect(result.current.previewError).toContain('preview unavailable');
+    await act(async () => {
+      await result.current.browse();
+    });
+    expect(preview).toHaveBeenCalledTimes(3);
+    expect(result.current.previewError).toBe('');
+    expect(result.current.previewBusy).toBe(false);
+  });
+
+  it('allows a new selection to load without letting an old request release its guard', async () => {
+    const oldResponse = deferred<Preview>();
+    const newResponse = deferred<Preview>();
+    const preview = vi
+      .spyOn(mysqlGateway, 'preview')
+      .mockReturnValueOnce(oldResponse.promise)
+      .mockReturnValueOnce(newResponse.promise);
+    const { result } = await connectedExplorer();
+    let oldPending!: Promise<void>;
+    let newPending!: Promise<void>;
+    act(() => {
+      oldPending = result.current.browse();
+    });
+    act(() => result.current.select('sales.Customer'));
+    act(() => {
+      newPending = result.current.browse();
+    });
+    await act(async () => {
+      oldResponse.resolve({ columns: ['order_id'], rows: [['1']] });
+      await oldPending;
+      await result.current.browse();
+    });
+    expect(preview).toHaveBeenCalledTimes(2);
+    expect(result.current.previewBusy).toBe(true);
+    expect(result.current.preview).toBeNull();
+    const customer = { columns: ['customer_id'], rows: [['2']] };
+    await act(async () => {
+      newResponse.resolve(customer);
+      await newPending;
+    });
+    expect(result.current.preview).toBe(customer);
+    expect(result.current.previewBusy).toBe(false);
+  });
+
   it.each(['refresh', 'disconnect'] as const)(
     'preserves the session and cached preview after %s fails, then allows retry',
     async (operation) => {
