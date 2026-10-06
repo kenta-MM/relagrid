@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import type { QueryResult, QueryResultSet, Table } from '@/domain/database';
 import { SqlEditor } from './SqlEditor';
 import { CloseQueryDialog } from './CloseQueryDialog';
+import { WriteQueryDialog } from './WriteQueryDialog';
 import { CsvExportDialog, type ExportSelection } from '@/features/csv/CsvExportDialog';
 import { claimShortcut, shortcutTarget } from '@/lib/shortcuts';
 
@@ -57,6 +58,7 @@ interface Execution {
   readOnly: boolean;
 }
 interface Props {
+  connectionTarget?: string;
   active: boolean;
   tables: Table[];
   selected: string;
@@ -119,12 +121,19 @@ export function QueryWorkspace({
   busy,
   connectionId,
   connectionLabel,
+  connectionTarget,
   execute,
   cancel,
 }: Props) {
   const shortcuts = useShortcuts();
   const nextId = useRef(2);
   const inFlight = useRef(false);
+  const [writeConfirmation, setWriteConfirmation] = useState<{
+    id: number;
+    sql: string;
+    connectionId: number;
+    target: string;
+  } | null>(null);
   function initialSql() {
     const table = tables.find((t) => t.id === selected) ?? tables[0];
     return table
@@ -392,8 +401,17 @@ export function QueryWorkspace({
     setTabs((tabs) => [...tabs, tab]);
     selectEditor(id);
   }
-  async function run(explain = false) {
+  async function run(explain = false, confirmed = false) {
     if (!canRun || inFlight.current) return;
+    if (!explain && !readOnly && !confirmed) {
+      setWriteConfirmation({
+        id: current.id,
+        sql: current.sql,
+        connectionId,
+        target: connectionTarget ?? connectionLabel,
+      });
+      return;
+    }
     inFlight.current = true;
     const id = current.id,
       sql = current.sql;
@@ -869,6 +887,24 @@ export function QueryWorkspace({
           {!history.length && <p className="muted">実行履歴はありません。</p>}
         </div>
       </aside>
+      {writeConfirmation && (
+        <WriteQueryDialog
+          target={writeConfirmation.target}
+          sql={writeConfirmation.sql}
+          cancel={() => setWriteConfirmation(null)}
+          confirm={() => {
+            const pending = writeConfirmation;
+            setWriteConfirmation(null);
+            if (
+              pending.id === current.id &&
+              pending.sql === current.sql &&
+              pending.connectionId === connectionId &&
+              pending.target === (connectionTarget ?? connectionLabel)
+            )
+              void run(false, true);
+          }}
+        />
+      )}
       {closingTab && (
         <CloseQueryDialog
           name={closingTab.name}

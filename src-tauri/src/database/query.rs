@@ -43,11 +43,13 @@ fn validated_sql(sql: &str, read_only: bool, explain: bool) -> Result<String, St
         if checked.is_break() {
             return Err("読み取り専用のクエリのみ実行できます。".into());
         }
+    }
+    if is_query || is_explain {
         let tokens = Tokenizer::new(&MySqlDialect {}, sql)
             .tokenize()
             .map_err(|e| e.to_string())?;
         if tokens.iter().any(|t| matches!(t, Token::Word(w) if w.quote_style.is_none() && w.value.eq_ignore_ascii_case("INTO"))) {
-            return Err("読み取りモードではSELECT INTOを実行できません。".into());
+            return Err("SELECT INTOは実行できません。".into());
         }
     }
     // Each execution uses a fresh connection: session/transaction control would be misleading.
@@ -143,6 +145,9 @@ fn batch_statements(sql: &str, read_only: bool, explain: bool) -> Result<Vec<Str
     }
     if statements.is_empty() {
         return Err("SQLを入力してください。".into());
+    }
+    if statements.len() > 1 && !read_only {
+        return Err("安全なトランザクション機能が未実装のため、読み書き接続では複数文を実行できません。SQLは1文ずつ実行してください（自動コミット）。".into());
     }
     if statements.len() > 1 && (explain || !batch_supported) {
         return Err("複数文はSELECT・INSERT・UPDATE・DELETEのみ対応しています。DDL・実行計画は1文ずつ実行してください。".into());
@@ -391,12 +396,33 @@ mod tests {
                 .len(),
             2
         );
-        assert_eq!(
-            batch_statements("SELECT 1; UPDATE t SET a=1; SELECT 2", false, false)
-                .unwrap()
-                .len(),
-            3
+        assert!(batch_statements("SELECT 1; UPDATE t SET a=1; SELECT 2", false, false).is_err());
+    }
+
+    #[test]
+    fn refuses_write_batches_before_any_statement_executes() {
+        for sql in [
+            "UPDATE inventory SET quantity=quantity-1 WHERE id=1; INSERT INTO orders(id) VALUES(1)",
+            "SELECT 1; DELETE FROM t",
+            "UPDATE t SET a=1; SELECT 1",
+            "WITH c AS (SELECT 1) UPDATE t SET a=1; SELECT 2",
+        ] {
+            assert!(
+                batch_statements(sql, false, false)
+                    .unwrap_err()
+                    .contains("トランザクション"),
+                "{sql}"
+            );
+        }
+        assert!(batch_statements("UPDATE t SET a=1 WHERE id=1", false, false).is_ok());
+        assert!(batch_statements("SELECT 1; SELECT 2", true, false).is_ok());
+        assert!(
+            batch_statements("SELECT stored_function(); SELECT 2", false, false)
+                .unwrap_err()
+                .contains("トランザクション")
         );
+        assert!(batch_statements("SELECT 1 INTO OUTFILE '/tmp/x'", false, false).is_err());
+        assert!(batch_statements("SELECT 1; SELECT 2 INTO @value", false, false).is_err());
     }
 
     #[test]
