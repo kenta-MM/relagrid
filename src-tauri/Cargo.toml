@@ -29,5 +29,8 @@ zeroize = "1"
 [dev-dependencies]
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
+[patch.crates-io]
+sqlx-mysql = { path = "vendor/sqlx-mysql" }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }

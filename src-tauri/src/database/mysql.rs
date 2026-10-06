@@ -303,20 +303,22 @@ mod tests {
                     "WITH RECURSIVE n AS (SELECT 0 AS v UNION ALL SELECT v+1 FROM n WHERE v<31) SELECT a.v FROM n a CROSS JOIN n b; SELECT 9 AS tail",
                     true, false,
                 ).await.unwrap();
-                assert!(limited.error.is_none());
+                assert!(limited.error.is_some());
                 assert_eq!(limited.result_sets[0].rows.len(), 1000);
                 assert!(limited.result_sets[0].truncated);
-                assert_eq!(limited.result_sets[1].rows[0][0].as_deref(), Some("9"));
+                assert!(!limited.result_sets[0].complete);
+                assert_eq!(limited.result_sets.len(), 1);
 
                 let wide = crate::database::query::execute(
                     &readonly,
                     "WITH RECURSIVE n AS (SELECT 0 AS v UNION ALL SELECT v+1 FROM n WHERE v<31) SELECT REPEAT('x',5000), REPEAT('y',5000) FROM n a CROSS JOIN n b; SELECT 1 AS tail",
                     true, false,
                 ).await.unwrap();
-                assert!(wide.error.is_none());
+                assert!(wide.error.is_some());
                 assert!(wide.result_sets[0].truncated);
                 assert!(wide.result_sets[0].rows.len() < 1000);
-                assert_eq!(wide.result_sets.len(), 2);
+                assert!(!wide.result_sets[0].complete);
+                assert_eq!(wide.result_sets.len(), 1);
 
                 let (sender, receiver) = tokio::sync::oneshot::channel();
                 let operation = crate::cancellable(crate::database::query::execute(&readonly, "SELECT SLEEP(10)", true, false), receiver);

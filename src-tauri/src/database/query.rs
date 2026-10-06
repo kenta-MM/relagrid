@@ -1,3 +1,4 @@
+use super::query_resources::{account_received, preview, MAX_RECEIVED_ROWS};
 use crate::models::{QueryResult, QueryResultSet};
 use futures_util::TryStreamExt;
 use sqlparser::{
@@ -191,6 +192,12 @@ pub async fn execute(
         sql.to_owned()
     };
     let parsed = Parser::parse_sql(&MySqlDialect {}, &execution_sql).map_err(|e| e.to_string())?;
+    let viewing_selects = read_only
+        && !explain
+        && parsed.iter().all(|s| matches!(s, Statement::Query(_)))
+        && statements
+            .iter()
+            .all(|s| validated_sql(s, true, false).is_ok());
     let mut referenced_tables = Vec::new();
     let _: ControlFlow<()> = visit_relations(&parsed, |name| {
         let name = name.to_string();
@@ -204,6 +211,14 @@ pub async fn execute(
     let mut sets: Vec<QueryResultSet> = Vec::new();
     let mut bytes = 0;
     let operation = async {
+        if viewing_selects {
+            (&mut connection)
+                .execute("SET SESSION sql_select_limit = 1001")
+                .await
+                .map_err(|e| format!("取得行数制限を設定できません: {e}（SQLは未実行）"))?;
+        }
+        let mut received_bytes = 0;
+        let mut received_rows = 0;
         // sqlx does not expose metadata for empty sets through fetch_many.
         // Prepare all original statements without executing them before sending the batch.
         let mut descriptions = Vec::new();
@@ -241,8 +256,21 @@ pub async fn execute(
                     set.complete = true;
                     index += 1;
                     retaining = true;
+                    received_rows = 0;
                 }
                 Either::Right(row) => {
+                    received_rows += 1;
+                    if viewing_selects && received_rows >= MAX_RECEIVED_ROWS {
+                        set.truncated = true;
+                        return Err(format!("文{}の閲覧取得上限（1,000行）に達し、接続を破棄しました。後続文の実行状態は不明です。", index + 1));
+                    }
+                    for i in 0..row.len() {
+                        let value: Option<&[u8]> = row.try_get_unchecked(i).map_err(|e| e.to_string())?;
+                        if !account_received(&mut received_bytes, value.map_or(0, |v| v.len())) {
+                            set.truncated = true;
+                            return Err(format!("文{}の累積取得値が20MBを超え、接続を破棄しました。現在・後続文の完了状態は不明です。更新の反映状況を確認してください。", index + 1));
+                        }
+                    }
                     if !retaining || set.rows.len() >= MAX_ROWS || bytes >= MAX_BYTES {
                         set.truncated = true;
                         continue; // Drain to the next result without retaining more rows.
@@ -251,15 +279,11 @@ pub async fn execute(
                     let mut row_bytes = 0;
                     let mut row_exceeds_budget = false;
                     for (i, column) in row.columns().iter().enumerate() {
-                        let value: Option<Vec<u8>> = row.try_get_unchecked(i).map_err(|e| e.to_string())?;
+                        let value: Option<&[u8]> = row.try_get_unchecked(i).map_err(|e| e.to_string())?;
                         cells.push(value.map(|value| {
-                            let binary = matches!(column.type_info().name(), "BINARY" | "VARBINARY" | "BLOB" | "BIT") || std::str::from_utf8(&value).is_err();
-                            let text = if binary {
-                                value.iter().take(2500).map(|b| format!("{b:02X}")).collect::<String>()
-                            } else {
-                                String::from_utf8_lossy(&value).chars().take(5000).collect::<String>()
-                            };
-                            if (binary && value.len() > 2500) || (!binary && String::from_utf8_lossy(&value).chars().count() > 5000) { set.truncated = true; }
+                            let binary = matches!(column.type_info().name(), "BINARY" | "VARBINARY" | "BLOB" | "BIT");
+                            let (text, truncated) = preview(value, binary);
+                            set.truncated |= truncated;
                             text
                         }));
                         row_bytes += cells.last().unwrap().as_ref().map_or(0, String::len) + std::mem::size_of::<Option<String>>();
