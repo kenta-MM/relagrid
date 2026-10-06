@@ -10,7 +10,8 @@ use tauri::Manager;
 use zeroize::Zeroizing;
 
 const LEGACY_FORMAT: &str = "relagrid-connections-v1-aes256gcm-dpapi";
-const FORMAT: &str = "relagrid-connections-v2-aes256gcm-dpapi";
+const V2_FORMAT: &str = "relagrid-connections-v2-aes256gcm-dpapi";
+const FORMAT: &str = "relagrid-connections-v3-aes256gcm-dpapi";
 const INVALID: &str = "接続設定を復号できません。ファイルの破損、またはWindowsユーザーが異なる可能性があります。元のファイルは保持されます。";
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -66,11 +67,17 @@ fn aad(entry: &SavedConnection, format: &str) -> Vec<u8> {
         entry.config.read_only,
     ))
     .expect("serializable metadata");
-    if format == FORMAT {
+    if format == FORMAT || format == V2_FORMAT {
         metadata
             .as_array_mut()
             .unwrap()
             .push(serde_json::to_value(&entry.config.tls_ca_pem).unwrap());
+    }
+    if format == FORMAT {
+        metadata
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::to_value(entry.config.tls_enabled).unwrap());
     }
     serde_json::to_vec(&metadata).expect("serializable metadata")
 }
@@ -110,7 +117,8 @@ fn seal_with_format(data: &Connections, format: &str) -> Result<Vec<u8>, String>
 
 fn unseal(bytes: &[u8]) -> Result<Connections, String> {
     let mut envelope: Envelope = serde_json::from_slice(bytes).map_err(|_| INVALID)?;
-    if envelope.format != FORMAT && envelope.format != LEGACY_FORMAT {
+    if envelope.format != FORMAT && envelope.format != V2_FORMAT && envelope.format != LEGACY_FORMAT
+    {
         return Err(INVALID.into());
     }
     let protected = STANDARD
@@ -120,6 +128,9 @@ fn unseal(bytes: &[u8]) -> Result<Connections, String> {
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| INVALID)?;
     validate(&envelope.data)?;
     for entry in &mut envelope.data.connections {
+        if envelope.format != FORMAT && entry.config.tls_enabled.is_some() {
+            return Err(INVALID.into());
+        }
         // Legacy files did not authenticate CA settings; never trust an injected field.
         if envelope.format == LEGACY_FORMAT && entry.config.tls_ca_pem.is_some() {
             return Err(INVALID.into());
@@ -140,6 +151,9 @@ fn unseal(bytes: &[u8]) -> Result<Connections, String> {
             )
             .map_err(|_| INVALID)?;
         entry.config.password = String::from_utf8(plaintext).map_err(|_| INVALID)?;
+        if envelope.format != FORMAT {
+            entry.config.tls_enabled = Some(true);
+        }
     }
     Ok(envelope.data)
 }
@@ -293,6 +307,31 @@ mod tests {
         current["data"]["connections"][0]["config"]["tlsCaPem"] = "attacker CA".into();
         assert!(unseal(&serde_json::to_vec(&current).unwrap()).is_err());
     }
+    #[test]
+    fn tls_selection_roundtrips_and_is_authenticated() {
+        for enabled in [false, true] {
+            let mut data = sample();
+            data.connections[0].config.tls_enabled = Some(enabled);
+            let bytes = seal(&data).unwrap();
+            assert_eq!(
+                unseal(&bytes).unwrap().connections[0].config.tls_enabled,
+                Some(enabled)
+            );
+            let mut modified: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            modified["data"]["connections"][0]["config"]["tlsEnabled"] = (!enabled).into();
+            assert!(unseal(&serde_json::to_vec(&modified).unwrap()).is_err());
+        }
+        for format in [LEGACY_FORMAT, V2_FORMAT] {
+            let bytes = seal_with_format(&sample(), format).unwrap();
+            assert_eq!(
+                unseal(&bytes).unwrap().connections[0].config.tls_enabled,
+                Some(true)
+            );
+            let mut modified: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            modified["data"]["connections"][0]["config"]["tlsEnabled"] = false.into();
+            assert!(unseal(&serde_json::to_vec(&modified).unwrap()).is_err());
+        }
+    }
     fn sample() -> Connections {
         Connections {
             groups: vec!["開発".into()],
@@ -307,6 +346,7 @@ mod tests {
                     database: "app".into(),
                     read_only: true,
                     tls_ca_pem: None,
+                    tls_enabled: None,
                 },
             }],
         }

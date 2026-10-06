@@ -32,6 +32,7 @@ export interface ConnectionConfig {
   database: string;
   readOnly?: boolean;
   tlsCaPem?: string;
+  tlsEnabled?: boolean;
 }
 export interface ConnectionEntry {
   id: number;

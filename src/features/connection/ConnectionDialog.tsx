@@ -13,6 +13,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
+  const [tlsEnabled, setTlsEnabled] = useState(false);
   const [tlsCaPem, setTlsCaPem] = useState('');
   const formRef = useRef<HTMLFormElement>(null);
   async function importFile(event: ChangeEvent<HTMLInputElement>) {
@@ -24,6 +25,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
     try {
       if (file.size > 64 * 1024) throw new Error('接続ファイルは64KB以下にしてください。');
       const config = parseConnectionFile(await file.text());
+      setTlsEnabled(config.tlsEnabled ?? false);
       setTlsCaPem(config.tlsCaPem ?? '');
       if (!formRef.current) return;
       for (const [key, value] of Object.entries(config)) {
@@ -53,10 +55,12 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
         database: String(form.get('database')).trim(),
         group: String(form.get('group') ?? '').trim() || undefined,
         readOnly: form.get('readOnly') === 'on',
-        tlsCaPem: tlsCaPem.trim() || undefined,
+        tlsEnabled,
+        tlsCaPem: tlsEnabled ? tlsCaPem.trim() || undefined : undefined,
       });
       setFileName('');
       setTlsCaPem('');
+      setTlsEnabled(false);
       onOpenChange(false);
     } catch (error) {
       setError(String(error instanceof Error ? error.message : error));
@@ -72,6 +76,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
           setError('');
           setFileName('');
           setTlsCaPem('');
+          setTlsEnabled(false);
           onOpenChange(value);
         }
       }}
@@ -139,19 +144,32 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
             <input name="password" type="password" autoComplete="current-password" />
           </label>
           <label className="read-only-option">
-            信頼するCA証明書（PEM・任意）
-            <textarea
-              aria-label="信頼するCA証明書"
-              value={tlsCaPem}
-              onChange={(event) => setTlsCaPem(event.target.value)}
-              maxLength={65536}
-              rows={3}
-              placeholder="-----BEGIN CERTIFICATE-----"
+            <input
+              type="checkbox"
+              checked={tlsEnabled}
+              onChange={(event) => setTlsEnabled(event.target.checked)}
+              disabled={busy}
             />
+            TLSを使用する
           </label>
-          <p className="text-xs text-muted-foreground">
-            TLSと証明書のホスト名検証は必須です。社内CAを使う場合はCA証明書を入力してください。秘密鍵は入力しないでください。
-          </p>
+          {tlsEnabled && (
+            <>
+              <label className="read-only-option">
+                信頼するCA証明書（PEM・任意）
+                <textarea
+                  aria-label="信頼するCA証明書"
+                  value={tlsCaPem}
+                  onChange={(event) => setTlsCaPem(event.target.value)}
+                  maxLength={65536}
+                  rows={3}
+                  placeholder="-----BEGIN CERTIFICATE-----"
+                />
+              </label>
+              <p className="text-xs text-muted-foreground">
+                TLS使用時は証明書とホスト名を検証します。社内CAを使う場合はCA証明書を入力してください。秘密鍵は入力しないでください。
+              </p>
+            </>
+          )}
           <label className="read-only-option">
             <input name="readOnly" type="checkbox" defaultChecked />
             読み取り専用

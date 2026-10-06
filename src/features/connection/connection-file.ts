@@ -28,6 +28,9 @@ export function parseConnectionFile(text: string): ConnectionConfig {
   if (data.readOnly !== undefined && typeof data.readOnly !== 'boolean') {
     throw new Error('readOnlyにはtrueまたはfalseを指定してください。');
   }
+  if (data.tlsEnabled !== undefined && typeof data.tlsEnabled !== 'boolean') {
+    throw new Error('tlsEnabledにはtrueまたはfalseを指定してください。');
+  }
   if (
     data.tlsCaPem !== undefined &&
     (typeof data.tlsCaPem !== 'string' ||
@@ -44,6 +47,7 @@ export function parseConnectionFile(text: string): ConnectionConfig {
     password: (data.password as string | undefined) ?? '',
     group: (data.group as string | undefined)?.trim() || undefined,
     readOnly: (data.readOnly as boolean | undefined) ?? true,
+    tlsEnabled: (data.tlsEnabled as boolean | undefined) ?? false,
     ...(data.tlsCaPem ? { tlsCaPem: data.tlsCaPem as string } : {}),
   };
 }
