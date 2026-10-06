@@ -9,7 +9,8 @@ use std::{io::Write, path::Path, sync::Mutex};
 use tauri::Manager;
 use zeroize::Zeroizing;
 
-const FORMAT: &str = "relagrid-connections-v1-aes256gcm-dpapi";
+const LEGACY_FORMAT: &str = "relagrid-connections-v1-aes256gcm-dpapi";
+const FORMAT: &str = "relagrid-connections-v2-aes256gcm-dpapi";
 const INVALID: &str = "接続設定を復号できません。ファイルの破損、またはWindowsユーザーが異なる可能性があります。元のファイルは保持されます。";
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -53,9 +54,9 @@ fn validate(data: &Connections) -> Result<(), String> {
 }
 
 // Bind each password to its connection metadata to reject ciphertext swapping.
-fn aad(entry: &SavedConnection) -> Vec<u8> {
-    serde_json::to_vec(&(
-        FORMAT,
+fn aad(entry: &SavedConnection, format: &str) -> Vec<u8> {
+    let mut metadata = serde_json::to_value((
+        format,
         entry.id,
         &entry.group,
         &entry.config.host,
@@ -64,10 +65,21 @@ fn aad(entry: &SavedConnection) -> Vec<u8> {
         &entry.config.database,
         entry.config.read_only,
     ))
-    .expect("serializable metadata")
+    .expect("serializable metadata");
+    if format == FORMAT {
+        metadata
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::to_value(&entry.config.tls_ca_pem).unwrap());
+    }
+    serde_json::to_vec(&metadata).expect("serializable metadata")
 }
 
 fn seal(data: &Connections) -> Result<Vec<u8>, String> {
+    seal_with_format(data, FORMAT)
+}
+
+fn seal_with_format(data: &Connections, format: &str) -> Result<Vec<u8>, String> {
     validate(data)?;
     let key = Zeroizing::new(Aes256Gcm::generate_key(OsRng).to_vec());
     let protected_key = STANDARD.encode(os_protect(&key, false)?);
@@ -80,7 +92,7 @@ fn seal(data: &Connections) -> Result<Vec<u8>, String> {
                 &nonce,
                 Payload {
                     msg: entry.config.password.as_bytes(),
-                    aad: &aad(entry),
+                    aad: &aad(entry, format),
                 },
             )
             .map_err(|_| "パスワードを暗号化できませんでした。")?;
@@ -89,7 +101,7 @@ fn seal(data: &Connections) -> Result<Vec<u8>, String> {
         entry.config.password = STANDARD.encode(bytes);
     }
     serde_json::to_vec_pretty(&Envelope {
-        format: FORMAT.into(),
+        format: format.into(),
         protected_key,
         data,
     })
@@ -98,7 +110,7 @@ fn seal(data: &Connections) -> Result<Vec<u8>, String> {
 
 fn unseal(bytes: &[u8]) -> Result<Connections, String> {
     let mut envelope: Envelope = serde_json::from_slice(bytes).map_err(|_| INVALID)?;
-    if envelope.format != FORMAT {
+    if envelope.format != FORMAT && envelope.format != LEGACY_FORMAT {
         return Err(INVALID.into());
     }
     let protected = STANDARD
@@ -108,6 +120,10 @@ fn unseal(bytes: &[u8]) -> Result<Connections, String> {
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| INVALID)?;
     validate(&envelope.data)?;
     for entry in &mut envelope.data.connections {
+        // Legacy files did not authenticate CA settings; never trust an injected field.
+        if envelope.format == LEGACY_FORMAT && entry.config.tls_ca_pem.is_some() {
+            return Err(INVALID.into());
+        }
         let bytes = STANDARD
             .decode(&entry.config.password)
             .map_err(|_| INVALID)?;
@@ -119,7 +135,7 @@ fn unseal(bytes: &[u8]) -> Result<Connections, String> {
                 Nonce::from_slice(&bytes[..12]),
                 Payload {
                     msg: &bytes[12..],
-                    aad: &aad(entry),
+                    aad: &aad(entry, &envelope.format),
                 },
             )
             .map_err(|_| INVALID)?;
@@ -247,6 +263,36 @@ pub fn save_connections(
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
+    #[test]
+    fn ca_configuration_is_authenticated_and_legacy_fields_are_not_trusted() {
+        let legacy = seal_with_format(&sample(), LEGACY_FORMAT).unwrap();
+        let mut legacy: serde_json::Value = serde_json::from_slice(&legacy).unwrap();
+        legacy["data"]["connections"][0]["config"]
+            .as_object_mut()
+            .unwrap()
+            .remove("tlsCaPem");
+        let restored = unseal(&serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert!(restored.connections[0].config.tls_ca_pem.is_none());
+        assert_eq!(restored.connections[0].config.password, "secret-日本語");
+        let migrated: Envelope = serde_json::from_slice(&seal(&restored).unwrap()).unwrap();
+        assert_eq!(migrated.format, FORMAT);
+        legacy["data"]["connections"][0]["config"]["tlsCaPem"] = "attacker CA".into();
+        assert!(unseal(&serde_json::to_vec(&legacy).unwrap()).is_err());
+        let mut data = sample();
+        data.connections[0].config.tls_ca_pem = Some("trusted CA".into());
+        let mut current: serde_json::Value = serde_json::from_slice(&seal(&data).unwrap()).unwrap();
+        assert_eq!(
+            unseal(&serde_json::to_vec(&current).unwrap())
+                .unwrap()
+                .connections[0]
+                .config
+                .tls_ca_pem
+                .as_deref(),
+            Some("trusted CA")
+        );
+        current["data"]["connections"][0]["config"]["tlsCaPem"] = "attacker CA".into();
+        assert!(unseal(&serde_json::to_vec(&current).unwrap()).is_err());
+    }
     fn sample() -> Connections {
         Connections {
             groups: vec!["開発".into()],
@@ -260,6 +306,7 @@ mod tests {
                     password: "secret-日本語".into(),
                     database: "app".into(),
                     read_only: true,
+                    tls_ca_pem: None,
                 },
             }],
         }

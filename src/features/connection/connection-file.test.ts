@@ -26,6 +26,9 @@ describe('connection file', () => {
     { ...base, host: ' ' },
     { ...base, password: 123 },
     { ...base, group: [] },
+    { ...base, tlsCaPem: 123 },
+    { ...base, tlsCaPem: '-----BEGIN PRIVATE KEY-----' },
+    { ...base, tlsCaPem: 'a'.repeat(65537) },
   ])('rejects invalid structure or field types: %j', (value) => {
     expect(() => parseConnectionFile(JSON.stringify(value))).toThrow();
   });
@@ -33,5 +36,9 @@ describe('connection file', () => {
     expect(() => parseConnectionFile('{"password":"private')).toThrow(
       '接続ファイルは有効なJSONで指定してください。',
     );
+  });
+  it('imports a custom CA without changing credentials', () => {
+    const tlsCaPem = '-----BEGIN CERTIFICATE-----\nexample\n-----END CERTIFICATE-----';
+    expect(parseConnectionFile(JSON.stringify({ ...base, tlsCaPem })).tlsCaPem).toBe(tlsCaPem);
   });
 });
