@@ -6,6 +6,7 @@ mod query_store;
 
 use models::{ConnectionConfig, Preview, QueryResult, SchemaSnapshot};
 use sqlx::MySqlPool;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::State;
 use tokio::sync::{oneshot, Mutex};
 
@@ -15,6 +16,7 @@ struct Session {
     snapshot: SchemaSnapshot,
     read_only: bool,
 }
+static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 #[derive(Default)]
 struct AppState {
     session: Mutex<Option<Session>>,
@@ -28,13 +30,14 @@ async fn connect_database(
 ) -> Result<SchemaSnapshot, String> {
     let mut session = state.session.lock().await;
     let pool = database::mysql::connect(&config).await?;
-    let snapshot = match database::mysql::schema(&pool, &config.database).await {
+    let mut snapshot = match database::mysql::schema(&pool, &config.database).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             pool.close().await;
             return Err(error);
         }
     };
+    snapshot.session_id = Some(NEXT_SESSION.fetch_add(1, Ordering::Relaxed).to_string());
     let old = session.replace(Session {
         pool,
         database: config.database,
@@ -51,7 +54,8 @@ async fn connect_database(
 async fn refresh_schema(state: State<'_, AppState>) -> Result<SchemaSnapshot, String> {
     let mut guard = state.session.lock().await;
     let session = guard.as_mut().ok_or("データベースに接続してください。")?;
-    let snapshot = database::mysql::schema(&session.pool, &session.database).await?;
+    let mut snapshot = database::mysql::schema(&session.pool, &session.database).await?;
+    snapshot.session_id.clone_from(&session.snapshot.session_id);
     session.snapshot = snapshot.clone();
     Ok(snapshot)
 }
