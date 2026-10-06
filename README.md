@@ -183,7 +183,7 @@ cargo test --manifest-path src-tauri/Cargo.toml mysql_fixture -- --ignored --tes
 npm run build:desktop
 ```
 
-Windowsインストーラーは `src-tauri/target/release/bundle/nsis/` に出力されます。配布版では開発サーバーやNode.jsは不要です。コード署名は未設定です。
+Windowsインストーラーは `src-tauri/target/release/bundle/nsis/` に出力されます。配布版では開発サーバーやNode.jsは不要です。通常の開発ビルドは未署名です。本番配布用に、アプリ本体・インストーラーの署名、署名者・タイムスタンプ検証、改ざん拒否テストを通過した成果物だけを公開する工程を追加しています。導入にはコード署名証明書、専用runner、GitHub Environmentの設定が必要です。設定と利用者向け検証手順は [Windows署名付きリリース](docs/windows-release.md) を参照してください。本番証明書での署名は未検証です。
 
 アイコンはWindows用の `src-tauri/icons/icon.ico` と、再生成用の元画像 `source.png` のみ管理します。
 
