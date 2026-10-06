@@ -28,6 +28,7 @@ export async function openFixture(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('データベース名').fill('SalesDB');
+  await page.getByLabel('ユーザー名').fill('fixture_reader');
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page

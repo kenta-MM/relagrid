@@ -10,6 +10,7 @@ try {
   await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('ポート').fill('3307');
   await page.getByLabel('データベース名').fill('relagrid_fixture');
+  await page.getByLabel('ユーザー名').fill('root');
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 15000 });
   await expect(page.locator('.react-flow__node')).toHaveCount(2);
@@ -25,6 +26,7 @@ try {
   await page.getByRole('button', { name: '接続を追加', exact: true }).click();
   await page.getByLabel('ポート').fill('3307');
   await page.getByLabel('データベース名').fill('relagrid_nonexistent_fixture');
+  await page.getByLabel('ユーザー名').fill('root');
   await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
   await expect(page.getByRole('alert')).toBeVisible();
   await page.getByRole('button', { name: '閉じる', exact: true }).click();

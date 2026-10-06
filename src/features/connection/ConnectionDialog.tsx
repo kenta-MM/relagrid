@@ -127,7 +127,12 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
           </label>
           <label>
             ユーザー名
-            <input name="username" defaultValue="root" autoComplete="username" required />
+            <input
+              name="username"
+              placeholder="例：relagrid_reader"
+              autoComplete="username"
+              required
+            />
           </label>
           <label>
             パスワード
@@ -151,6 +156,9 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
             <input name="readOnly" type="checkbox" defaultChecked />
             読み取り専用
           </label>
+          <p className="text-xs text-muted-foreground">
+            本番の閲覧には、対象DBのSELECT権限だけを持つ専用ユーザーを使用してください。読み取り専用チェックはDB側の権限制限の代わりにはなりません。
+          </p>
           <p className="text-xs text-muted-foreground">
             チェックを外すと更新SQLを実行できます（DBユーザーの権限内）。接続成功後に設定を自動保存します。パスワードは暗号化され、次回起動時に接続一覧を復元します。
           </p>

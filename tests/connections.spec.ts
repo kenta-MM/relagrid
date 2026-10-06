@@ -1,5 +1,17 @@
 import { test, expect } from '@playwright/test';
 
+test('requires an explicitly entered user and explains production least privilege', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '接続を追加' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByLabel('ユーザー名')).toHaveValue('');
+  await expect(dialog.getByLabel('ユーザー名')).toHaveAttribute('required', '');
+  await expect(dialog.getByLabel('読み取り専用', { exact: true })).toBeChecked();
+  await expect(dialog).toContainText('SELECT権限だけを持つ専用ユーザー');
+});
+
 test('groups added connections, collapses groups and switches the active database', async ({
   page,
 }) => {
@@ -51,6 +63,7 @@ test('groups added connections, collapses groups and switches the active databas
   ]) {
     await page.getByRole('button', { name: '接続を追加' }).click();
     await page.getByLabel('データベース名').fill(database);
+    await page.getByLabel('ユーザー名').fill('fixture_reader');
     await page.getByLabel('グループ名（任意）').fill(group);
     await page.getByRole('button', { name: '接続してスキーマを読み込む' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
