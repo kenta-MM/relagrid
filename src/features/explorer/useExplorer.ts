@@ -41,6 +41,21 @@ export function useExplorer() {
   const previewsByTable = useRef(new Map<string, Preview>());
   const revision = useRef(0);
   const operationInFlight = useRef(false);
+  const disconnecting = useRef(false);
+  const operationVersion = useRef(0);
+  const operationIsRead = useRef(false);
+  const readRevision = useRef(0);
+  const readCount = useRef(0);
+  const [readBusy, setReadBusy] = useState(false);
+  function beginRead() {
+    readCount.current++;
+    setReadBusy(true);
+    return readRevision.current;
+  }
+  function endRead() {
+    readCount.current--;
+    setReadBusy(readCount.current > 0);
+  }
   const logId = useRef(1);
   const log = useCallback((message: string, error = false) => {
     const entry = {
@@ -113,13 +128,15 @@ export function useExplorer() {
     log(message, true);
   }
   // A ref gates operations synchronously, before React updates disabled buttons.
-  function beginOperation() {
+  function beginOperation(isRead = false) {
     if (loading || operationInFlight.current) return false;
     operationInFlight.current = true;
+    operationIsRead.current = isRead;
     setBusy(true);
-    return true;
+    return ++operationVersion.current;
   }
-  function endOperation() {
+  function endOperation(version: number) {
+    if (version !== operationVersion.current || disconnecting.current) return;
     operationInFlight.current = false;
     setBusy(false);
   }
@@ -144,7 +161,9 @@ export function useExplorer() {
   }
   async function addConnectionGroup(name: string) {
     const group = name.trim();
-    if (!group || groupsRef.current.includes(group) || !beginOperation()) return;
+    if (!group || groupsRef.current.includes(group)) return;
+    const operation = beginOperation();
+    if (!operation) return;
     try {
       const groups = [...groupsRef.current, group];
       await persist(storedData(connectionConfigs.current, groups));
@@ -154,14 +173,16 @@ export function useExplorer() {
     } catch (error) {
       reportStorageError(error);
     } finally {
-      endOperation();
+      endOperation(operation);
     }
   }
   async function moveConnection(id: number, name?: string) {
     const group = name?.trim() || undefined;
     if (group && !groupsRef.current.includes(group)) return;
     const config = connectionConfigs.current.get(id);
-    if (!config || !beginOperation()) return;
+    if (!config) return;
+    const operation = beginOperation();
+    if (!operation) return;
     try {
       const configs = new Map(connectionConfigs.current);
       configs.set(id, { ...config, group });
@@ -174,13 +195,16 @@ export function useExplorer() {
     } catch (error) {
       reportStorageError(error);
     } finally {
-      endOperation();
+      endOperation(operation);
     }
   }
   async function connect(config: ConnectionConfig, existingId?: number) {
-    if (!beginOperation()) throw new Error('実行中の操作が完了するまでお待ちください。');
+    const operation = beginOperation(true);
+    if (!operation) throw new Error('実行中の操作が完了するまでお待ちください。');
+    const request = beginRead();
     try {
       const next = await mysqlGateway.connect(config);
+      if (request !== readRevision.current) throw new Error('読み込みを中断しました。');
       const id = existingId ?? nextConnectionId.current++;
       const group = config.group?.trim() || undefined;
       if (group && !groupsRef.current.includes(group)) {
@@ -217,7 +241,8 @@ export function useExplorer() {
         reportStorageError(error);
       }
     } finally {
-      endOperation();
+      endRead();
+      endOperation(operation);
     }
   }
   async function selectConnection(id: number) {
@@ -225,9 +250,11 @@ export function useExplorer() {
     const config = connectionConfigs.current.get(id);
     if (!config) return;
     setConnectionError('');
+    const request = readRevision.current;
     try {
       await connect(config, id);
     } catch (error) {
+      if (request !== readRevision.current) return;
       const message = String(error instanceof Error ? error.message : error);
       setConnectionError(message);
       log(message, true);
@@ -235,20 +262,31 @@ export function useExplorer() {
   }
   async function refresh() {
     if (mode !== 'mysql') return;
-    if (!beginOperation()) return;
+    const operation = beginOperation(true);
+    if (!operation) return;
     invalidatePreview();
+    const request = beginRead();
     try {
       const next = await gateway.current.refresh();
+      if (request !== readRevision.current) return;
       accept(next);
       log(`スキーマを更新しました · ${next.tables.length} tables`);
     } catch (error) {
-      log(String(error), true);
+      if (request === readRevision.current) log(String(error), true);
     } finally {
-      endOperation();
+      endRead();
+      endOperation(operation);
     }
   }
   async function disconnect() {
-    if (!beginOperation()) return;
+    if (loading || disconnecting.current || (operationInFlight.current && !operationIsRead.current))
+      return;
+    disconnecting.current = true;
+    const operation = ++operationVersion.current;
+    operationInFlight.current = true;
+    setBusy(true);
+    readRevision.current++;
+    revision.current++;
     try {
       await gateway.current.disconnect();
       setMode('disconnected');
@@ -262,7 +300,8 @@ export function useExplorer() {
     } catch (error) {
       log(String(error), true);
     } finally {
-      endOperation();
+      disconnecting.current = false;
+      endOperation(operation);
     }
   }
   async function browse() {
@@ -273,9 +312,10 @@ export function useExplorer() {
     setPreviewBusy(true);
     setPreviewError('');
     setPreview(null);
+    const readRequest = beginRead();
     try {
       const result = await gateway.current.preview(table);
-      if (request !== revision.current) return;
+      if (request !== revision.current || readRequest !== readRevision.current) return;
       previewsByTable.current.set(table.id, result);
       setPreview(result);
       log(`${table.name} · ${result.rows.length} 件をプレビュー`);
@@ -285,12 +325,14 @@ export function useExplorer() {
         log(String(error), true);
       }
     } finally {
+      endRead();
       if (request === revision.current) setPreviewBusy(false);
     }
   }
   async function execute(sql: string, explain = false, executionId?: string) {
     if (mode !== 'mysql') throw new Error('データベースに接続してください。');
-    if (!beginOperation()) throw new Error('実行中の操作が完了するまでお待ちください。');
+    const operation = beginOperation();
+    if (!operation) throw new Error('実行中の操作が完了するまでお待ちください。');
     try {
       return await gateway.current.execute(sql, explain, executionId);
     } finally {
@@ -299,10 +341,19 @@ export function useExplorer() {
         previewsByTable.current.clear();
         invalidatePreview();
       }
-      endOperation();
+      endOperation(operation);
     }
   }
   return {
+    readBusy,
+    cancelReads: async () => {
+      try {
+        await gateway.current.cancelReads?.();
+      } catch (error) {
+        log('読み込みの中断要求に失敗しました: ' + String(error), true);
+        throw error;
+      }
+    },
     cancel: async (executionId: string) => {
       await gateway.current.cancel?.(executionId);
     },

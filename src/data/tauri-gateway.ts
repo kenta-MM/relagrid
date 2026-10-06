@@ -12,4 +12,5 @@ export const mysqlGateway: DatabaseGateway = {
   execute: (sql, explain = false, executionId) =>
     invoke<QueryResult>('execute_query', { sql, explain, executionId }),
   cancel: (executionId) => invoke<void>('cancel_query', { executionId }),
+  cancelReads: () => invoke<void>('cancel_database_reads'),
 };

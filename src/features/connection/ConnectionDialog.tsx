@@ -8,8 +8,9 @@ interface Props {
   open: boolean;
   onOpenChange(open: boolean): void;
   onConnect(config: ConnectionConfig): Promise<void>;
+  onCancel?(): Promise<void>;
 }
-export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
+export function ConnectionDialog({ open, onOpenChange, onConnect, onCancel }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
@@ -144,6 +145,19 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
             {busy ? <LoaderCircle size={16} className="animate-spin" /> : <Database size={16} />}
             {busy ? '接続中…' : '接続してスキーマを読み込む'}
           </Button>
+          {busy && onCancel && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                void onCancel().catch(() =>
+                  setError('中断の要求に失敗しました。再度お試しください。'),
+                )
+              }
+            >
+              読み込みを中断
+            </Button>
+          )}
         </form>
       </DialogContent>
     </Dialog>

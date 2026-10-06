@@ -156,6 +156,8 @@ export function App() {
           onSelect={explorer.select}
           onConnect={() => setConnectionOpen(true)}
           onDisconnect={() => void explorer.disconnect()}
+          readBusy={explorer.readBusy}
+          onCancelRead={() => void explorer.cancelReads().catch(() => {})}
         />
         <main
           className="main-panel"
@@ -240,6 +242,7 @@ export function App() {
         open={connectionOpen}
         onOpenChange={setConnectionOpen}
         onConnect={explorer.connect}
+        onCancel={explorer.cancelReads}
       />
     </div>
   );
