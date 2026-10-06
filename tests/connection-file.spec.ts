@@ -9,6 +9,11 @@ test('validates file size and JSON, preserves fields on failure and permits impo
   const dialog = page.getByRole('dialog');
   const upload = dialog.getByLabel('接続ファイルを読み込む（JSON）');
   const database = dialog.getByLabel('データベース名');
+  const tls = dialog.getByLabel('TLSを使用する', { exact: true });
+  await expect(tls).not.toBeChecked();
+  await expect(dialog.getByLabel('信頼するCA証明書', { exact: true })).toHaveCount(0);
+  await tls.check();
+  await expect(dialog.getByLabel('信頼するCA証明書', { exact: true })).toBeVisible();
   await database.fill('keep-this-draft');
   await upload.setInputFiles({
     name: 'large.json',
@@ -44,10 +49,27 @@ test('validates file size and JSON, preserves fields on failure and permits impo
   await upload.setInputFiles(valid);
   await expect(dialog.getByRole('alert')).toHaveCount(0);
   await expect(database).toHaveValue('imported');
+  await expect(tls).not.toBeChecked();
   await expect(dialog.getByLabel('ホスト')).toHaveValue('localhost');
   await expect(dialog.getByLabel('パスワード', { exact: true })).toHaveValue('  test-only  ');
   await expect(dialog.getByLabel('グループ名（任意）')).toHaveValue('QA');
   await expect(dialog.getByLabel('読み取り専用', { exact: true })).not.toBeChecked();
+  await upload.setInputFiles({
+    name: 'tls.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      JSON.stringify({
+        host: 'localhost',
+        port: 3307,
+        database: 'secure',
+        username: 'reader',
+        tlsEnabled: true,
+        tlsCaPem: '-----BEGIN CERTIFICATE-----\nfixture\n-----END CERTIFICATE-----',
+      }),
+    ),
+  });
+  await expect(tls).toBeChecked();
+  await expect(dialog.getByLabel('信頼するCA証明書', { exact: true })).toContainText('fixture');
   await database.fill('edited');
   await upload.setInputFiles(valid);
   await expect(database).toHaveValue('imported');

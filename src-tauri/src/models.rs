@@ -12,6 +12,8 @@ pub struct ConnectionConfig {
     pub read_only: bool,
     #[serde(default)]
     pub tls_ca_pem: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tls_enabled: Option<bool>,
 }
 fn default_read_only() -> bool {
     true

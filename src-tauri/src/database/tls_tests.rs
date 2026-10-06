@@ -18,11 +18,12 @@ fn config(port: u16, trusted: bool) -> ConnectionConfig {
         password: "fixture".into(),
         database: "fixture".into(),
         read_only: true,
+        tls_enabled: Some(true),
         tls_ca_pem: trusted.then(|| CA.into()),
     }
 }
 
-fn handshake(cert: Option<&'static [u8]>, trusted: bool) -> (String, bool) {
+fn handshake(cert: Option<&'static [u8]>, trusted: bool, enabled: bool) -> (String, bool) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let server = std::thread::spawn(move || {
@@ -52,6 +53,21 @@ fn handshake(cert: Option<&'static [u8]>, trusted: bool) -> (String, bool) {
         if socket.read_exact(&mut header).is_err() {
             return false;
         }
+        if !enabled {
+            let length =
+                header[0] as usize | (header[1] as usize) << 8 | (header[2] as usize) << 16;
+            assert!(length > 32, "client should send authentication directly");
+            let mut authentication = vec![0; length];
+            socket.read_exact(&mut authentication).unwrap();
+            assert_eq!(
+                u32::from_le_bytes(authentication[..4].try_into().unwrap()) & 0x0800,
+                0
+            );
+            let error = b"\xff\x15\x04#28000fixture-auth-rejected";
+            socket.write_all(&[error.len() as u8, 0, 0, 2]).unwrap();
+            socket.write_all(error).unwrap();
+            return true;
+        }
         let Some(cert) = cert else {
             panic!("client sent authentication without TLS")
         };
@@ -80,11 +96,9 @@ fn handshake(cert: Option<&'static [u8]>, trusted: bool) -> (String, bool) {
         stream.flush().unwrap();
         true
     });
-    let options = connection_options(&config(port, trusted)).unwrap();
-    assert!(matches!(
-        options.get_ssl_mode(),
-        MySqlSslMode::VerifyIdentity
-    ));
+    let mut config = config(port, trusted);
+    config.tls_enabled = Some(enabled);
+    let options = connection_options(&config).unwrap();
     let error = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -104,7 +118,7 @@ fn handshake(cert: Option<&'static [u8]>, trusted: bool) -> (String, bool) {
 
 #[test]
 fn verified_tls_reaches_authentication_only_with_trusted_matching_certificate() {
-    let (error, authenticated) = handshake(Some(CERT), true);
+    let (error, authenticated) = handshake(Some(CERT), true, true);
     assert!(authenticated, "{error}");
     assert!(error.contains("fixture-auth-rejected"), "{error}");
 }
@@ -123,7 +137,7 @@ fn untrusted_expired_wrong_host_and_non_tls_never_receive_credentials() {
         ),
         (None, true),
     ] {
-        let (error, authenticated) = handshake(cert, trusted);
+        let (error, authenticated) = handshake(cert, trusted, true);
         assert!(
             !authenticated,
             "invalid endpoint received credentials: {error}"
@@ -138,5 +152,31 @@ fn rejects_private_keys_and_oversized_ca_input() {
         let mut config = config(3307, false);
         config.tls_ca_pem = Some(pem);
         assert!(connection_options(&config).is_err());
+    }
+}
+
+#[test]
+fn tls_is_disabled_by_default_and_can_be_enabled() {
+    let mut config = config(3307, false);
+    for enabled in [None, Some(false)] {
+        config.tls_enabled = enabled;
+        assert!(matches!(
+            connection_options(&config).unwrap().get_ssl_mode(),
+            MySqlSslMode::Disabled
+        ));
+    }
+    config.tls_enabled = Some(true);
+    assert!(matches!(
+        connection_options(&config).unwrap().get_ssl_mode(),
+        MySqlSslMode::VerifyIdentity
+    ));
+}
+
+#[test]
+fn non_tls_connection_reaches_authentication_without_certificates() {
+    for certificate in [None, Some(CERT)] {
+        let (error, authenticated) = handshake(certificate, false, false);
+        assert!(authenticated, "{error}");
+        assert!(error.contains("fixture-auth-rejected"), "{error}");
     }
 }

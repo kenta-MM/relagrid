@@ -24,11 +24,15 @@ fn connection_options(config: &ConnectionConfig) -> Result<MySqlConnectOptions, 
         .username(&config.username)
         .password(&config.password)
         .database(&config.database)
-        .ssl_mode(MySqlSslMode::VerifyIdentity);
+        .ssl_mode(if config.tls_enabled.unwrap_or(false) {
+            MySqlSslMode::VerifyIdentity
+        } else {
+            MySqlSslMode::Disabled
+        });
     if let Some(pem) = config
         .tls_ca_pem
         .as_deref()
-        .filter(|pem| !pem.trim().is_empty())
+        .filter(|pem| config.tls_enabled.unwrap_or(false) && !pem.trim().is_empty())
     {
         if pem.len() > 64 * 1024
             || !pem.contains("-----BEGIN CERTIFICATE-----")
@@ -190,6 +194,7 @@ mod tests {
                     password: String::new(),
                     database: "relagrid_fixture".into(),
                     read_only: true,
+                    tls_enabled: Some(std::env::var("RELAGRID_TEST_TLS").as_deref() == Ok("true")),
                     tls_ca_pem: std::env::var("RELAGRID_TEST_CA_PEM").ok(),
                 };
                 let pool = connect(&config).await.expect("fixture connection");
