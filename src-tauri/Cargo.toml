@@ -15,8 +15,11 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "mysql"] }
-tokio = { version = "1", features = ["sync", "time"] }
+tokio = { version = "1", features = ["sync", "time", "net"] }
 futures-util = "0.3"
+tiberius = { version = "=0.13.0", default-features = false, features = ["tds73", "native-tls", "chrono"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+chrono = "0.4"
 sqlparser = { version = "0.59", default-features = false, features = ["std", "visitor"] }
 tauri-plugin-dialog = "2"
 tempfile = "3"

@@ -25,6 +25,12 @@ export function parseConnectionFile(text: string): ConnectionConfig {
   if (data.group !== undefined && typeof data.group !== 'string') {
     throw new Error('groupには文字列を指定してください。');
   }
+  if (
+    data.databaseKind !== undefined &&
+    (typeof data.databaseKind !== 'string' || !['mysql', 'sqlServer'].includes(data.databaseKind))
+  ) {
+    throw new Error('databaseKindにはmysqlまたはsqlServerを指定してください。');
+  }
   if (data.readOnly !== undefined && typeof data.readOnly !== 'boolean') {
     throw new Error('readOnlyにはtrueまたはfalseを指定してください。');
   }
@@ -40,6 +46,7 @@ export function parseConnectionFile(text: string): ConnectionConfig {
     throw new Error('tlsCaPemには64KB以下のCA証明書を指定してください。秘密鍵は指定できません。');
   }
   return {
+    databaseKind: (data.databaseKind as ConnectionConfig['databaseKind']) ?? 'mysql',
     host: (data.host as string).trim(),
     port: data.port as number,
     database: (data.database as string).trim(),

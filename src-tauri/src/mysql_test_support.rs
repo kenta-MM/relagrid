@@ -12,6 +12,7 @@ pub(crate) fn config(read_only: bool) -> ConnectionConfig {
     let tls = required("RELAGRID_TEST_TLS");
     assert!(tls == "true" || tls == "false");
     ConnectionConfig {
+        database_kind: None,
         host: required("RELAGRID_TEST_HOST"),
         port: required("RELAGRID_TEST_PORT")
             .parse()

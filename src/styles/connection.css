@@ -20,7 +20,9 @@
   font-size: 12px;
   color: #bbc6d9;
 }
-.connection-form input {
+.connection-form input,
+.connection-form select,
+.connection-form textarea {
   width: 100%;
   border: 1px solid #354056;
   background: #101722;

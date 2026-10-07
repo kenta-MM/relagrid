@@ -12,6 +12,7 @@ const KEY: &[u8] = include_bytes!("../../test-fixtures/tls/server-key.der");
 
 fn config(port: u16, trusted: bool) -> ConnectionConfig {
     ConnectionConfig {
+        database_kind: None,
         host: "127.0.0.1".into(),
         port,
         username: "fixture".into(),

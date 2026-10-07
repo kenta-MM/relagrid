@@ -11,7 +11,8 @@ use zeroize::Zeroizing;
 
 const LEGACY_FORMAT: &str = "relagrid-connections-v1-aes256gcm-dpapi";
 const V2_FORMAT: &str = "relagrid-connections-v2-aes256gcm-dpapi";
-const FORMAT: &str = "relagrid-connections-v3-aes256gcm-dpapi";
+const V3_FORMAT: &str = "relagrid-connections-v3-aes256gcm-dpapi";
+const FORMAT: &str = "relagrid-connections-v4-aes256gcm-dpapi";
 const INVALID: &str = "接続設定を復号できません。ファイルの破損、またはWindowsユーザーが異なる可能性があります。元のファイルは保持されます。";
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -67,17 +68,23 @@ fn aad(entry: &SavedConnection, format: &str) -> Vec<u8> {
         entry.config.read_only,
     ))
     .expect("serializable metadata");
-    if format == FORMAT || format == V2_FORMAT {
+    if format == FORMAT || format == V3_FORMAT || format == V2_FORMAT {
         metadata
             .as_array_mut()
             .unwrap()
             .push(serde_json::to_value(&entry.config.tls_ca_pem).unwrap());
     }
-    if format == FORMAT {
+    if format == FORMAT || format == V3_FORMAT {
         metadata
             .as_array_mut()
             .unwrap()
             .push(serde_json::to_value(entry.config.tls_enabled).unwrap());
+    }
+    if format == FORMAT {
+        metadata
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::to_value(entry.config.database_kind).unwrap());
     }
     serde_json::to_vec(&metadata).expect("serializable metadata")
 }
@@ -117,7 +124,10 @@ fn seal_with_format(data: &Connections, format: &str) -> Result<Vec<u8>, String>
 
 fn unseal(bytes: &[u8]) -> Result<Connections, String> {
     let mut envelope: Envelope = serde_json::from_slice(bytes).map_err(|_| INVALID)?;
-    if envelope.format != FORMAT && envelope.format != V2_FORMAT && envelope.format != LEGACY_FORMAT
+    if envelope.format != FORMAT
+        && envelope.format != V3_FORMAT
+        && envelope.format != V2_FORMAT
+        && envelope.format != LEGACY_FORMAT
     {
         return Err(INVALID.into());
     }
@@ -128,7 +138,13 @@ fn unseal(bytes: &[u8]) -> Result<Connections, String> {
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| INVALID)?;
     validate(&envelope.data)?;
     for entry in &mut envelope.data.connections {
-        if envelope.format != FORMAT && entry.config.tls_enabled.is_some() {
+        if envelope.format != FORMAT
+            && envelope.format != V3_FORMAT
+            && entry.config.tls_enabled.is_some()
+        {
+            return Err(INVALID.into());
+        }
+        if envelope.format != FORMAT && entry.config.database_kind.is_some() {
             return Err(INVALID.into());
         }
         // Legacy files did not authenticate CA settings; never trust an injected field.
@@ -151,7 +167,7 @@ fn unseal(bytes: &[u8]) -> Result<Connections, String> {
             )
             .map_err(|_| INVALID)?;
         entry.config.password = String::from_utf8(plaintext).map_err(|_| INVALID)?;
-        if envelope.format != FORMAT {
+        if envelope.format != FORMAT && envelope.format != V3_FORMAT {
             entry.config.tls_enabled = Some(true);
         }
     }
@@ -332,6 +348,50 @@ mod tests {
             assert!(unseal(&serde_json::to_vec(&modified).unwrap()).is_err());
         }
     }
+    #[test]
+    fn database_kind_is_authenticated_and_old_files_remain_mysql() {
+        use crate::models::DatabaseKind;
+        for kind in [DatabaseKind::Mysql, DatabaseKind::SqlServer] {
+            let mut data = sample();
+            data.connections[0].config.database_kind = Some(kind);
+            data.connections[0].config.tls_enabled = Some(true);
+            let bytes = seal(&data).unwrap();
+            let restored = unseal(&bytes).unwrap();
+            assert_eq!(restored.connections[0].config.database_kind, Some(kind));
+            assert_eq!(restored.connections[0].config.tls_enabled, Some(true));
+            let mut tampered: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            tampered["data"]["connections"][0]["config"]["databaseKind"] =
+                if kind == DatabaseKind::Mysql {
+                    "sqlServer"
+                } else {
+                    "mysql"
+                }
+                .into();
+            assert!(unseal(&serde_json::to_vec(&tampered).unwrap()).is_err());
+        }
+        for format in [LEGACY_FORMAT, V2_FORMAT, V3_FORMAT] {
+            let mut data = sample();
+            if format == V3_FORMAT {
+                data.connections[0].config.tls_enabled = Some(false);
+            }
+            let bytes = seal_with_format(&data, format).unwrap();
+            let restored = unseal(&bytes).unwrap();
+            assert_eq!(
+                restored.connections[0]
+                    .config
+                    .database_kind
+                    .unwrap_or_default(),
+                DatabaseKind::Mysql
+            );
+            assert_eq!(
+                restored.connections[0].config.tls_enabled,
+                Some(format != V3_FORMAT)
+            );
+            let mut tampered: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            tampered["data"]["connections"][0]["config"]["databaseKind"] = "sqlServer".into();
+            assert!(unseal(&serde_json::to_vec(&tampered).unwrap()).is_err());
+        }
+    }
     fn sample() -> Connections {
         Connections {
             groups: vec!["開発".into()],
@@ -339,6 +399,7 @@ mod tests {
                 id: 1,
                 group: Some("開発".into()),
                 config: ConnectionConfig {
+                    database_kind: None,
                     host: "localhost".into(),
                     port: 3306,
                     username: "reader".into(),

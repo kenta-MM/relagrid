@@ -228,7 +228,7 @@ export function App() {
           <Database size={12} />
           {explorer.mode === 'disconnected'
             ? '未接続 — 接続を追加または選択してください'
-            : `MySQL · ${explorer.database}`}
+            : `${explorer.mode === 'sqlServer' ? 'SQL Server' : 'MySQL'} · ${explorer.database}`}
         </span>
         <span>
           <ShieldCheck size={12} />

@@ -9,13 +9,14 @@ import {
   completionKeymap,
 } from '@codemirror/autocomplete';
 import { defaultHighlightStyle, syntaxHighlighting, bracketMatching } from '@codemirror/language';
-import { sql, MySQL } from '@codemirror/lang-sql';
+import { sql, MySQL, MSSQL } from '@codemirror/lang-sql';
 import { linter } from '@codemirror/lint';
 import type { Table } from '@/domain/database';
 import { sqlCompletions, typeDiagnostics } from './sql-assistance';
 
 interface Props {
   value: string;
+  databaseKind?: 'mysql' | 'sqlServer';
   tables: Table[];
   onChange(value: string): void;
 }
@@ -39,9 +40,11 @@ const theme = EditorView.theme(
   { dark: true },
 );
 
-export function SqlEditor({ value, tables, onChange }: Props) {
+export function SqlEditor({ value, tables, databaseKind, onChange }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
+  const language = useRef(new Compartment());
+  const diagnostics = useRef(new Compartment());
   const completion = useRef(new Compartment());
   const callbacks = useRef({ onChange });
   callbacks.current = { onChange };
@@ -55,7 +58,7 @@ export function SqlEditor({ value, tables, onChange }: Props) {
           history(),
           highlightActiveLine(),
           bracketMatching(),
-          sql({ dialect: MySQL }),
+          language.current.of(sql({ dialect: databaseKind === 'sqlServer' ? MSSQL : MySQL })),
           syntaxHighlighting(defaultHighlightStyle),
           theme,
           EditorView.contentAttributes.of({
@@ -65,7 +68,7 @@ export function SqlEditor({ value, tables, onChange }: Props) {
           }),
           completion.current.of(
             autocompletion({
-              override: [sqlCompletions(tables)],
+              ...(databaseKind === 'sqlServer' ? {} : { override: [sqlCompletions(tables)] }),
               activateOnTyping: true,
               interactionDelay: 0,
             }),
@@ -77,7 +80,11 @@ export function SqlEditor({ value, tables, onChange }: Props) {
             ]),
           ),
           keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
-          linter((view) => typeDiagnostics(view.state.doc.toString()), { delay: 350 }),
+          diagnostics.current.of(
+            databaseKind === 'sqlServer'
+              ? []
+              : linter((view) => typeDiagnostics(view.state.doc.toString()), { delay: 350 }),
+          ),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) callbacks.current.onChange(update.state.doc.toString());
           }),
@@ -101,12 +108,26 @@ export function SqlEditor({ value, tables, onChange }: Props) {
     editor.current?.dispatch({
       effects: completion.current.reconfigure(
         autocompletion({
-          override: [sqlCompletions(tables)],
+          ...(databaseKind === 'sqlServer' ? {} : { override: [sqlCompletions(tables)] }),
           activateOnTyping: true,
           interactionDelay: 0,
         }),
       ),
     });
-  }, [tables]);
+  }, [tables, databaseKind]);
+  useEffect(() => {
+    editor.current?.dispatch({
+      effects: [
+        language.current.reconfigure(
+          sql({ dialect: databaseKind === 'sqlServer' ? MSSQL : MySQL }),
+        ),
+        diagnostics.current.reconfigure(
+          databaseKind === 'sqlServer'
+            ? []
+            : linter((view) => typeDiagnostics(view.state.doc.toString()), { delay: 350 }),
+        ),
+      ],
+    });
+  }, [databaseKind]);
   return <div className="sql-code-editor" ref={host} />;
 }

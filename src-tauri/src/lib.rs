@@ -6,14 +6,14 @@ mod models;
 mod mysql_test_support;
 mod query_store;
 
+use database::Database;
 use models::{ConnectionConfig, Preview, QueryResult, SchemaSnapshot};
-use sqlx::MySqlPool;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::State;
 use tokio::sync::{oneshot, Mutex};
 
 struct Session {
-    pool: MySqlPool,
+    pool: Database,
     database: String,
     snapshot: SchemaSnapshot,
     read_only: bool,
@@ -31,8 +31,8 @@ async fn connect_database(
     state: State<'_, AppState>,
 ) -> Result<SchemaSnapshot, String> {
     let mut session = state.session.lock().await;
-    let pool = database::mysql::connect(&config).await?;
-    let mut snapshot = match database::mysql::schema(&pool, &config.database).await {
+    let pool = Database::connect(&config).await?;
+    let mut snapshot = match pool.schema(&config.database).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             pool.close().await;
@@ -56,7 +56,7 @@ async fn connect_database(
 async fn refresh_schema(state: State<'_, AppState>) -> Result<SchemaSnapshot, String> {
     let mut guard = state.session.lock().await;
     let session = guard.as_mut().ok_or("データベースに接続してください。")?;
-    let mut snapshot = database::mysql::schema(&session.pool, &session.database).await?;
+    let mut snapshot = session.pool.schema(&session.database).await?;
     snapshot.session_id.clone_from(&session.snapshot.session_id);
     session.snapshot = snapshot.clone();
     Ok(snapshot)
@@ -72,7 +72,7 @@ async fn preview_table(table_id: String, state: State<'_, AppState>) -> Result<P
         .iter()
         .find(|table| table.id == table_id)
         .ok_or("この接続に存在しないテーブルです。スキーマを更新してください。")?;
-    database::mysql::preview(&session.pool, table).await
+    session.pool.preview(table).await
 }
 
 #[tauri::command]
@@ -93,7 +93,7 @@ async fn execute_query(
     let operation = async {
         let guard = state.session.lock().await;
         let session = guard.as_ref().ok_or("データベースに接続してください。")?;
-        database::query::execute(&session.pool, &sql, session.read_only, explain).await
+        session.pool.execute(&sql, session.read_only, explain).await
     };
     // Dropping the pending query also drops its detached connection and reader.
     let result = cancellable(operation, receiver).await;
