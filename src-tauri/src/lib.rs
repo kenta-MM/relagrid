@@ -2,6 +2,8 @@ mod connection_store;
 mod csv_export;
 mod database;
 mod models;
+#[cfg(test)]
+mod mysql_test_support;
 mod query_store;
 
 use models::{ConnectionConfig, Preview, QueryResult, SchemaSnapshot};
