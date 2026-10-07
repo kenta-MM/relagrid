@@ -167,17 +167,17 @@ npm run check:rust
 
 画面のE2Eは、デスクトップ版と共通のReact画面をインストール済みのMicrosoft Edge上で検証します。ブラウザ版製品のためではなく、画面の回帰テスト用です。レイアウト・循環参照・関連ノードの単体テストと、検索・選択・プレビュー・接続エラーの操作テストがあります。実際のTauri通信の検証は `tests/native-smoke.mjs` が担当します。
 
-MySQL統合テストは通常スキップします。**検証用の独立したMySQL**を `127.0.0.1:3307` に立て、`tests/fixtures/schema.sql` を投入してから実行してください。ユーザーは `root`、空パスワード、DBは `relagrid_fixture` です。既存の業務DBには投入しないでください。
+MySQLの実接続テストは、専用サーバーの起動・データ投入・TLSなし／ありの検証・後片付けまで自動実行できます。
 
 ```powershell
-cargo test --manifest-path src-tauri/Cargo.toml mysql_fixture -- --ignored --test-threads=1
+$env:RELAGRID_MYSQL_BIN = 'C:/Program Files/MySQL/MySQL Server 26.7/bin'
+$env:RELAGRID_MYSQL_VERSION = '26.7.0'
+npm run test:mysql
 ```
 
-このテストはスキーマ・外部キー・日本語・NULL・数値・バイナリの読み取りと、読み取り専用セッションがUPDATEを拒否することを確認します。
+MySQLバイナリの場所と実際に使用する完全なバージョンを指定してください。既存のMySQLサービスは使わず、一時データ領域と空きポートで動作します。通常のRustテストでは実DBテストをスキップします。詳しい検証内容・結果ログ・前提条件は [MySQL実接続テスト](docs/mysql-integration.md) を参照してください。
 
-実MySQLの統合テストは標準でTLSなしで実行します。TLSを検証する場合は環境変数 `RELAGRID_TEST_TLS=true` を設定してください。検証サーバーに127.0.0.1のSANを持つ証明書を設定し、必要に応じて環境変数 `RELAGRID_TEST_CA_PEM` に検証用CAのPEM本文を指定してください。GUIでTLS接続を試す場合は「TLSを使用する」を選択し、必要に応じてCAを指定してください。通常のRustテストには、外部DBを使わずループバックのMySQLハンドシェイクで正しいCA・未信頼CA・期限切れ・ホスト名不一致・非TLSを検証する試験を含みます。`src-tauri/test-fixtures/tls` の鍵は公開された試験専用鍵で、本番に使用してはいけません。
-
-全件CSVテストが一時テーブルを作成するため、同じfixtureを使う統合テストは直列で実行します。追加した異常系・境界値テスト、隔離プロファイルでのデスクトップ起動テスト、未検証項目は [QA検証記録](docs/qa-coverage.md) を参照してください。
+TLS検証には公開された試験専用鍵を使用します。`src-tauri/test-fixtures/tls` の鍵は実サービスで使用しないでください。過去の画面・ネイティブ検証記録と未検証項目は [QA検証記録](docs/qa-coverage.md) を参照してください。
 
 ## 配布
 
