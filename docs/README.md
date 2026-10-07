@@ -1,5 +1,7 @@
 # RelaGrid 設計書・関連資料
 
+現行のSQL Server対応と接続保存v4は [SQL Server Express対応](sql-server.md) を参照してください。以下の設計書は調査基準コミット時点の記録です。
+
 ## 調査基準
 
 | 項目             | 内容                                                                                                                                 |

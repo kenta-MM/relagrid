@@ -230,7 +230,7 @@ export function Sidebar({
       <div className="connection-caption">
         {mode === 'disconnected'
           ? '接続を追加または選択してください'
-          : `MySQL · ${readOnly ? '読み取り専用' : '読み書き可能'}`}
+          : `${mode === 'sqlServer' ? 'SQL Server' : 'MySQL'} · ${readOnly ? '読み取り専用' : '読み書き可能'}`}
       </div>
       <div className="section-label schemas-label">
         <span>
@@ -242,7 +242,7 @@ export function Sidebar({
             variant="ghost"
             size="icon"
             onClick={onRefresh}
-            disabled={busy || mode !== 'mysql'}
+            disabled={busy || mode === 'disconnected'}
             aria-label="更新"
             title="スキーマを更新"
           >
@@ -282,7 +282,7 @@ export function Sidebar({
         )}
       </nav>
       <div className="sidebar-bottom">
-        {mode === 'mysql' && (
+        {mode !== 'disconnected' && (
           <Button variant="ghost" className="w-full mt-3" disabled={busy} onClick={onDisconnect}>
             切断
           </Button>

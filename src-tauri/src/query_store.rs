@@ -53,6 +53,8 @@ pub struct SavedQuery {
     connection_id: u32,
     connection_label: String,
     read_only: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    database_kind: Option<crate::models::DatabaseKind>,
 }
 
 #[derive(Default)]
@@ -157,6 +159,7 @@ mod tests {
             connection_id: 8,
             connection_label: "private-host".into(),
             read_only: true,
+            database_kind: None,
         }]
     }
 
@@ -231,6 +234,7 @@ mod tests {
             connection_id: 0,
             connection_label: "未接続".into(),
             read_only: true,
+            database_kind: None,
         };
         let invalid = serde_json::to_vec(&vec![query]).unwrap();
         std::fs::write(&path, &invalid).unwrap();
@@ -238,6 +242,16 @@ mod tests {
         assert!(write(&path, &[]).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), invalid);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn database_kind_survives_encrypted_query_round_trip() {
+        let mut data = sample();
+        data[0].database_kind = Some(crate::models::DatabaseKind::SqlServer);
+        let restored = unseal(serde_json::from_slice(&seal(&data).unwrap()).unwrap()).unwrap();
+        assert_eq!(restored[0].database_kind, data[0].database_kind);
+        let legacy = unseal(serde_json::from_slice(&seal(&sample()).unwrap()).unwrap()).unwrap();
+        assert_eq!(legacy[0].database_kind, None);
     }
 
     #[test]
@@ -252,6 +266,7 @@ mod tests {
             connection_id: 3,
             connection_label: "DB A".into(),
             read_only: true,
+            database_kind: None,
         }];
         write(&path, &data).unwrap();
         let restored = read(&path).unwrap();

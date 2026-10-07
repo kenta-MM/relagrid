@@ -39,6 +39,7 @@ interface QueryTab {
   connectionId: number;
   connectionLabel: string;
   readOnly: boolean;
+  databaseKind?: 'mysql' | 'sqlServer';
   resultTab: string;
   resultIndex: number;
   views: Record<string, ResultView>;
@@ -46,6 +47,7 @@ interface QueryTab {
   cancelling?: boolean;
 }
 interface Execution {
+  databaseKind?: 'mysql' | 'sqlServer';
   id: string;
   tabId: number;
   sql: string;
@@ -114,6 +116,7 @@ function ResultTable({
   );
 }
 export function QueryWorkspace({
+  mode,
   active,
   tables,
   selected,
@@ -136,6 +139,8 @@ export function QueryWorkspace({
   } | null>(null);
   function initialSql() {
     const table = tables.find((t) => t.id === selected) ?? tables[0];
+    if (table && mode === 'sqlServer')
+      return `SELECT TOP (100) * FROM [${table.schema.replaceAll(']', ']]')}].[${table.name.replaceAll(']', ']]')}];`;
     return table
       ? `SELECT * FROM \`${table.name.replaceAll('`', '``')}\` LIMIT 100;`
       : connectionId === 0
@@ -151,6 +156,7 @@ export function QueryWorkspace({
       connectionId,
       connectionLabel,
       readOnly,
+      databaseKind: mode === 'sqlServer' ? 'sqlServer' : 'mysql',
       resultTab: 'result',
       resultIndex: 0,
       views: {},
@@ -205,13 +211,14 @@ export function QueryWorkspace({
     if (!storeReady || saving.current) return;
     const selected = all ? tabs : tabs.filter((tab) => tab.id === tabId);
     const snapshots: SavedQuery[] = selected.map(
-      ({ id, name, sql, connectionId, connectionLabel, readOnly }) => ({
+      ({ id, name, sql, connectionId, connectionLabel, readOnly, databaseKind }) => ({
         id,
         name,
         sql,
         connectionId,
         connectionLabel,
         readOnly,
+        databaseKind,
       }),
     );
     const data = [
@@ -253,6 +260,7 @@ export function QueryWorkspace({
                 connectionId,
                 connectionLabel,
                 readOnly,
+                databaseKind: mode === 'sqlServer' ? 'sqlServer' : 'mysql',
                 sql:
                   tab.sql ||
                   (savedQueries.current.some((saved) => saved.id === tab.id) ? '' : initialSql()),
@@ -389,7 +397,7 @@ export function QueryWorkspace({
   }
   function add(
     sql = initialSql(),
-    owner?: Pick<QueryTab, 'connectionId' | 'connectionLabel' | 'readOnly'>,
+    owner?: Pick<QueryTab, 'connectionId' | 'connectionLabel' | 'readOnly' | 'databaseKind'>,
   ) {
     const id = nextId.current++;
     const tab = createTab(id, sql);
@@ -397,11 +405,13 @@ export function QueryWorkspace({
       tab.connectionId = owner.connectionId;
       tab.connectionLabel = owner.connectionLabel;
       tab.readOnly = owner.readOnly;
+      tab.databaseKind = owner.databaseKind;
     }
     setTabs((tabs) => [...tabs, tab]);
     selectEditor(id);
   }
   async function run(explain = false, confirmed = false) {
+    if (explain && mode === 'sqlServer') return;
     if (!canRun || inFlight.current) return;
     if (!explain && !readOnly && !confirmed) {
       setWriteConfirmation({
@@ -448,6 +458,7 @@ export function QueryWorkspace({
             connectionId: current.connectionId,
             connectionLabel: current.connectionLabel,
             readOnly: current.readOnly,
+            databaseKind: current.databaseKind,
           },
           ...items,
         ].slice(0, 50),
@@ -467,6 +478,7 @@ export function QueryWorkspace({
             connectionId: current.connectionId,
             connectionLabel: current.connectionLabel,
             readOnly: current.readOnly,
+            databaseKind: current.databaseKind,
           },
           ...items,
         ].slice(0, 50),
@@ -610,8 +622,13 @@ export function QueryWorkspace({
           </div>
           <div className="editor-meta">
             <span>
-              {current.connectionLabel} · {current.connectionId === 0 ? '未接続' : 'MySQL'} ·{' '}
-              {current.readOnly ? '読み取り専用' : '読み書き可能'}
+              {current.connectionLabel} ·{' '}
+              {current.connectionId === 0
+                ? '未接続'
+                : current.databaseKind === 'sqlServer'
+                  ? 'SQL Server'
+                  : 'MySQL'}{' '}
+              · {current.readOnly ? '読み取り専用' : '読み書き可能'}
               {current.connectionId !== connectionId &&
                 ' · 実行するにはサイドバーでこの接続を選択してください'}
               {busy && !current.executionId && ' · 他の操作が完了するまで実行できません'}
@@ -625,6 +642,7 @@ export function QueryWorkspace({
           <SqlEditor
             key={tabId}
             value={current.sql}
+            databaseKind={current.databaseKind}
             tables={current.connectionId === connectionId ? tables : []}
             onChange={(sql) => update(tabId, { sql })}
           />
@@ -662,7 +680,13 @@ export function QueryWorkspace({
               ))}
             </div>
             {resultTab === 'plan' && current.plan && (
-              <Button variant="ghost" size="sm" disabled={!canRun} onClick={() => void run(true)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!canRun || mode === 'sqlServer'}
+                title={mode === 'sqlServer' ? 'SQL Serverの実行計画は未対応です' : undefined}
+                onClick={() => void run(true)}
+              >
                 再取得
               </Button>
             )}
@@ -726,7 +750,12 @@ export function QueryWorkspace({
               ) : (
                 <div className="preview-empty">
                   {resultTab === 'plan' ? (
-                    <Button variant="outline" disabled={!canRun} onClick={() => void run(true)}>
+                    <Button
+                      variant="outline"
+                      disabled={!canRun || mode === 'sqlServer'}
+                      title={mode === 'sqlServer' ? 'SQL Serverの実行計画は未対応です' : undefined}
+                      onClick={() => void run(true)}
+                    >
                       実行計画を取得（EXPLAIN）
                     </Button>
                   ) : (

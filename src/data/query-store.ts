@@ -7,6 +7,7 @@ export interface SavedQuery {
   connectionId: number;
   connectionLabel: string;
   readOnly: boolean;
+  databaseKind?: 'mysql' | 'sqlServer';
 }
 
 export const queryStore = {

@@ -1,0 +1,11 @@
+{
+  "databaseKind": "sqlServer",
+  "host": "127.0.0.1",
+  "port": 1433,
+  "database": "SampleDb",
+  "username": "reader",
+  "password": "",
+  "readOnly": true,
+  "tlsEnabled": false,
+  "group": "ローカル"
+}

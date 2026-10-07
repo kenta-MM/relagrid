@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { connectionStore, type SavedConnections } from '@/data/connection-store';
 import { mysqlGateway } from '@/data/tauri-gateway';
+import { databaseLabel } from '@/domain/database';
 import type {
   ConnectionConfig,
   ConnectionEntry,
@@ -17,7 +18,7 @@ export interface LogEntry {
 export function useExplorer() {
   const [snapshot, setSnapshot] = useState<SchemaSnapshot>({ tables: [], relationships: [] });
   const [selected, setSelected] = useState('');
-  const [mode, setMode] = useState<'disconnected' | 'mysql'>('disconnected');
+  const [mode, setMode] = useState<'disconnected' | 'mysql' | 'sqlServer'>('disconnected');
   const [database, setDatabase] = useState('');
   const [readOnly, setReadOnly] = useState(true);
   const [connections, setConnections] = useState<ConnectionEntry[]>([]);
@@ -74,6 +75,7 @@ export function useExplorer() {
             host: config.host,
             port: config.port,
             database: config.database,
+            databaseKind: config.databaseKind ?? 'mysql',
           })),
         );
         storageReady.current = true;
@@ -195,6 +197,7 @@ export function useExplorer() {
           {
             id,
             database: config.database,
+            databaseKind: config.databaseKind ?? 'mysql',
             group,
             host: config.host,
             port: config.port,
@@ -204,13 +207,13 @@ export function useExplorer() {
       setActiveConnectionId(id);
       setConnectionError('');
       gateway.current = mysqlGateway;
-      setMode('mysql');
+      setMode(config.databaseKind ?? 'mysql');
       setDatabase(config.database);
       setReadOnly(config.readOnly ?? true);
       setSessionId((value) => value + 1);
       accept(next);
       log(
-        `MySQL 接続完了 · ${next.tables.length} tables / ${next.relationships.length} relationships`,
+        `${databaseLabel(config.databaseKind)} 接続完了 · ${next.tables.length} tables / ${next.relationships.length} relationships`,
       );
       try {
         await persist(storedData());
@@ -235,7 +238,7 @@ export function useExplorer() {
     }
   }
   async function refresh() {
-    if (mode !== 'mysql') return;
+    if (mode === 'disconnected') return;
     if (!beginOperation()) return;
     try {
       const next = await gateway.current.refresh();
@@ -293,7 +296,7 @@ export function useExplorer() {
     }
   }
   async function execute(sql: string, explain = false, executionId?: string) {
-    if (mode !== 'mysql') throw new Error('データベースに接続してください。');
+    if (mode === 'disconnected') throw new Error('データベースに接続してください。');
     if (!beginOperation()) throw new Error('実行中の操作が完了するまでお待ちください。');
     try {
       return await gateway.current.execute(sql, explain, executionId);

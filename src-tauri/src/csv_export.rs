@@ -194,6 +194,50 @@ fn protect_cell(value: &str) -> String {
     }
 }
 
+async fn stream_sql_server_table(
+    config: &crate::models::ConnectionConfig,
+    table: &crate::models::Table,
+    file: &mut ExportFile,
+    progress: &Channel<ExportProgress>,
+) -> Result<u64, String> {
+    file.file
+        .write_all(b"\xEF\xBB\xBF")
+        .map_err(|e| e.to_string())?;
+    let mut writer = csv::WriterBuilder::new()
+        .quote_style(csv::QuoteStyle::Always)
+        .terminator(csv::Terminator::CRLF)
+        .from_writer(file.file.as_file_mut());
+    writer
+        .write_record(table.columns.iter().map(|c| protect_cell(&c.name)))
+        .map_err(|e| e.to_string())?;
+    let mut count = 0;
+    let mut last_progress = std::time::Instant::now();
+    let result = crate::database::sql_server::export_rows(config, table, |cells| {
+        writer
+            .write_record(
+                cells
+                    .iter()
+                    .map(|value| protect_cell(value.as_deref().unwrap_or_default())),
+            )
+            .map_err(|e| e.to_string())?;
+        count += 1;
+        if count % 100 == 0 && last_progress.elapsed() >= std::time::Duration::from_millis(250) {
+            writer.flush().map_err(|e| e.to_string())?;
+            progress
+                .send(ExportProgress { rows: count })
+                .map_err(|e| e.to_string())?;
+            last_progress = std::time::Instant::now();
+        }
+        Ok(())
+    })
+    .await?;
+    writer.flush().map_err(|e| e.to_string())?;
+    progress
+        .send(ExportProgress { rows: result })
+        .map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
 #[tauri::command]
 pub(crate) async fn export_table_csv(
     state: State<'_, CsvExportState>,
@@ -216,7 +260,14 @@ pub(crate) async fn export_table_csv(
         let guard = database.session.lock().await;
         let session = guard.as_ref().ok_or("データベースに接続してください")?;
         let table = source_table(&session.snapshot, &source)?;
-        stream_table(&session.pool, table, file, &progress).await
+        match &session.pool {
+            crate::database::Database::Mysql(pool) => {
+                stream_table(pool, table, file, &progress).await
+            }
+            crate::database::Database::SqlServer(config) => {
+                stream_sql_server_table(config, table, file, &progress).await
+            }
+        }
     };
     let bounded = async {
         tokio::time::timeout(std::time::Duration::from_secs(600), operation)

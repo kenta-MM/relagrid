@@ -62,7 +62,7 @@ export function BottomPanel({
         ) : (
           <div className="flex items-center gap-2">
             <span className="preview-caption">{tableName} · 最大100件 / 各値500文字まで</span>
-            {mode === 'mysql' && isTauri() && table && (
+            {mode !== 'disconnected' && isTauri() && table && (
               <Button
                 variant="ghost"
                 size="sm"

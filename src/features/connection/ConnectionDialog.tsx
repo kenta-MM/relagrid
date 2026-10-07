@@ -2,7 +2,7 @@ import { useRef, useState, type FormEvent, type ChangeEvent } from 'react';
 import { Database, LoaderCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import type { ConnectionConfig } from '@/domain/database';
+import type { ConnectionConfig, DatabaseKind } from '@/domain/database';
 import { parseConnectionFile } from './connection-file';
 interface Props {
   open: boolean;
@@ -10,6 +10,7 @@ interface Props {
   onConnect(config: ConnectionConfig): Promise<void>;
 }
 export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
+  const [databaseKind, setDatabaseKind] = useState<DatabaseKind>('mysql');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
@@ -25,6 +26,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
     try {
       if (file.size > 64 * 1024) throw new Error('接続ファイルは64KB以下にしてください。');
       const config = parseConnectionFile(await file.text());
+      setDatabaseKind(config.databaseKind ?? 'mysql');
       setTlsEnabled(config.tlsEnabled ?? false);
       setTlsCaPem(config.tlsCaPem ?? '');
       if (!formRef.current) return;
@@ -48,6 +50,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
     setError('');
     try {
       await onConnect({
+        databaseKind,
         host: String(form.get('host')).trim(),
         port: Number(form.get('port')),
         username: String(form.get('username')),
@@ -61,6 +64,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
       setFileName('');
       setTlsCaPem('');
       setTlsEnabled(false);
+      setDatabaseKind('mysql');
       onOpenChange(false);
     } catch (error) {
       setError(String(error instanceof Error ? error.message : error));
@@ -77,6 +81,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
           setFileName('');
           setTlsCaPem('');
           setTlsEnabled(false);
+          setDatabaseKind('mysql');
           onOpenChange(value);
         }
       }}
@@ -93,7 +98,7 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
         <div className="dialog-icon">
           <Database size={23} />
         </div>
-        <DialogTitle className="text-xl font-semibold">MySQLに接続</DialogTitle>
+        <DialogTitle className="text-xl font-semibold">データベースに接続</DialogTitle>
         <DialogDescription className="mt-2 mb-6 text-sm text-muted-foreground">
           データベースと、この接続での読み取りモードを設定します。
         </DialogDescription>
@@ -110,6 +115,29 @@ export function ConnectionDialog({ open, onOpenChange, onConnect }: Props) {
           {fileName && (
             <p role="status" className="text-xs text-muted-foreground">
               {fileName} を読み込みました。接続内容を確認してください。
+            </p>
+          )}
+          <label>
+            データベースの種類
+            <select
+              value={databaseKind}
+              disabled={busy}
+              onChange={(event) => {
+                const kind = event.target.value as DatabaseKind;
+                setDatabaseKind(kind);
+                const port = formRef.current?.elements.namedItem('port');
+                if (port instanceof HTMLInputElement && ['3306', '1433'].includes(port.value))
+                  port.value = kind === 'sqlServer' ? '1433' : '3306';
+              }}
+            >
+              <option value="mysql">MySQL</option>
+              <option value="sqlServer">SQL Server / Express</option>
+            </select>
+          </label>
+          {databaseKind === 'sqlServer' && (
+            <p className="text-xs text-muted-foreground">
+              SQL
+              Server認証を使用します。インスタンス名ではなくホストとTCPポートを指定してください。
             </p>
           )}
           <div className="form-pair">

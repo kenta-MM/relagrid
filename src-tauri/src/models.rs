@@ -1,8 +1,18 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DatabaseKind {
+    #[default]
+    Mysql,
+    SqlServer,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database_kind: Option<DatabaseKind>,
     pub host: String,
     pub port: u16,
     pub username: String,

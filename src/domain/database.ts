@@ -1,3 +1,5 @@
+export type DatabaseKind = 'mysql' | 'sqlServer';
+export const databaseLabel = (kind?: string) => (kind === 'sqlServer' ? 'SQL Server' : 'MySQL');
 export interface Column {
   name: string;
   dataType: string;
@@ -24,6 +26,7 @@ export interface SchemaSnapshot {
   relationships: Relationship[];
 }
 export interface ConnectionConfig {
+  databaseKind?: DatabaseKind;
   group?: string;
   host: string;
   port: number;
@@ -35,6 +38,7 @@ export interface ConnectionConfig {
   tlsEnabled?: boolean;
 }
 export interface ConnectionEntry {
+  databaseKind?: DatabaseKind;
   id: number;
   database: string;
   group?: string;

@@ -6,6 +6,7 @@ describe('connection file', () => {
   it('accepts BOM and defaults to read-only without a password', () => {
     expect(parseConnectionFile('\uFEFF' + JSON.stringify(base))).toEqual({
       ...base,
+      databaseKind: 'mysql',
       password: '',
       readOnly: true,
       tlsEnabled: false,
@@ -16,6 +17,7 @@ describe('connection file', () => {
     const config = { ...base, password: '  secret  ', group: ' local ', readOnly: false };
     expect(parseConnectionFile(JSON.stringify(config))).toEqual({
       ...config,
+      databaseKind: 'mysql',
       group: 'local',
       tlsEnabled: false,
     });
@@ -24,6 +26,8 @@ describe('connection file', () => {
     null,
     [],
     {},
+    { ...base, databaseKind: 'postgres' },
+    { ...base, databaseKind: ['mysql'] },
     { ...base, port: 65536 },
     { ...base, port: 1.5 },
     { ...base, port: '3306' },
@@ -37,6 +41,13 @@ describe('connection file', () => {
     { ...base, tlsCaPem: 'a'.repeat(65537) },
   ])('rejects invalid structure or field types: %j', (value) => {
     expect(() => parseConnectionFile(JSON.stringify(value))).toThrow();
+  });
+  it('imports SQL Server without changing its explicit port or TLS mode', () => {
+    expect(
+      parseConnectionFile(
+        JSON.stringify({ ...base, databaseKind: 'sqlServer', port: 51433, tlsEnabled: true }),
+      ),
+    ).toMatchObject({ databaseKind: 'sqlServer', port: 51433, tlsEnabled: true });
   });
   it('does not expose file contents in JSON errors', () => {
     expect(() => parseConnectionFile('{"password":"private')).toThrow(
