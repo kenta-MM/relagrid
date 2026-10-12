@@ -147,6 +147,7 @@ export function App() {
           connectionGroups={explorer.connectionGroups}
           onAddGroup={explorer.addConnectionGroup}
           onMoveConnection={explorer.moveConnection}
+          onRemoveConnection={explorer.removeConnection}
           activeConnectionId={explorer.activeConnectionId}
           connectionError={explorer.connectionError}
           onSelectConnection={(id) => void explorer.selectConnection(id)}

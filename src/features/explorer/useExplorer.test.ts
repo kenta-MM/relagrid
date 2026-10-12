@@ -48,6 +48,72 @@ const config = {
 };
 
 describe('explorer request coordination', () => {
+  it('removes a saved connection while preserving other entries and groups', async () => {
+    vi.mocked(connectionStore.load).mockResolvedValue({
+      connections: [
+        { id: 1, config },
+        { id: 2, config: { ...config, database: 'other' } },
+      ],
+      groups: ['Development'],
+    });
+    const { result } = await readyExplorer();
+    await act(async () => {
+      await result.current.removeConnection(1);
+    });
+    expect(result.current.connections.map((entry) => entry.id)).toEqual([2]);
+    expect(connectionStore.save).toHaveBeenLastCalledWith({
+      connections: [{ id: 2, config: { ...config, database: 'other' } }],
+      groups: ['Development'],
+    });
+    expect(mysqlGateway.disconnect).not.toHaveBeenCalled();
+    await act(async () => {
+      await result.current.selectConnection(1);
+    });
+    expect(result.current.activeConnectionId).toBeNull();
+  });
+
+  it('disconnects and clears the schema when deleting the active connection', async () => {
+    const { result } = await connectedExplorer();
+    await act(async () => {
+      await result.current.removeConnection(result.current.activeConnectionId!);
+    });
+    expect(mysqlGateway.disconnect).toHaveBeenCalledOnce();
+    expect(result.current.mode).toBe('disconnected');
+    expect(result.current.activeConnectionId).toBeNull();
+    expect(result.current.snapshot.tables).toEqual([]);
+    expect(result.current.connections).toEqual([]);
+    expect(connectionStore.save).toHaveBeenLastCalledWith({ connections: [], groups: [] });
+  });
+
+  it('retains the registration and allows retry when deletion cannot be saved', async () => {
+    const { result } = await connectedExplorer();
+    const id = result.current.activeConnectionId!;
+    vi.mocked(connectionStore.save).mockRejectedValueOnce(new Error('disk unavailable'));
+    await act(async () => {
+      await result.current.removeConnection(id);
+    });
+    expect(result.current.connections).toHaveLength(1);
+    expect(result.current.mode).toBe('disconnected');
+    expect(result.current.connectionError).toContain('disk unavailable');
+    await act(async () => {
+      await result.current.removeConnection(id);
+    });
+    expect(result.current.connections).toEqual([]);
+  });
+
+  it('preserves the registration and session if disconnecting for deletion fails', async () => {
+    const { result } = await connectedExplorer();
+    vi.mocked(connectionStore.save).mockClear();
+    vi.mocked(mysqlGateway.disconnect).mockRejectedValueOnce(new Error('disconnect failed'));
+    await act(async () => {
+      await result.current.removeConnection(result.current.activeConnectionId!);
+    });
+    expect(result.current.connections).toHaveLength(1);
+    expect(result.current.mode).toBe('mysql');
+    expect(result.current.connectionError).toContain('disconnect failed');
+    expect(connectionStore.save).not.toHaveBeenCalled();
+  });
+
   it('deduplicates preview requests before disabled buttons render and allows retry', async () => {
     const response = deferred<Preview>();
     const preview = vi.spyOn(mysqlGateway, 'preview').mockReturnValue(response.promise);
