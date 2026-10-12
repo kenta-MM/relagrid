@@ -254,16 +254,47 @@ export function useExplorer() {
     if (!beginOperation()) return;
     try {
       await gateway.current.disconnect();
-      setMode('disconnected');
-      setActiveConnectionId(null);
-      setConnectionError('');
-      setDatabase('');
-      setReadOnly(true);
-      setSessionId((value) => value + 1);
-      accept({ tables: [], relationships: [] });
+      clearConnection();
       log('接続を切断しました');
     } catch (error) {
       log(String(error), true);
+    } finally {
+      endOperation();
+    }
+  }
+  function clearConnection() {
+    setMode('disconnected');
+    setActiveConnectionId(null);
+    setConnectionError('');
+    setDatabase('');
+    setReadOnly(true);
+    setSessionId((value) => value + 1);
+    accept({ tables: [], relationships: [] });
+  }
+  async function removeConnection(id: number) {
+    const config = connectionConfigs.current.get(id);
+    if (!config || !beginOperation()) return;
+    try {
+      if (id === activeConnectionId) {
+        try {
+          await gateway.current.disconnect();
+          clearConnection();
+        } catch (error) {
+          const message = `接続を削除できませんでした: ${String(error)}`;
+          setConnectionError(message);
+          log(message, true);
+          return;
+        }
+      }
+      const configs = new Map(connectionConfigs.current);
+      configs.delete(id);
+      await persist(storedData(configs));
+      connectionConfigs.current = configs;
+      setConnections((current) => current.filter((entry) => entry.id !== id));
+      setConnectionError('');
+      log(`接続情報を削除しました · ${config.database}`);
+    } catch (error) {
+      reportStorageError(error);
     } finally {
       endOperation();
     }
@@ -316,6 +347,7 @@ export function useExplorer() {
     connectionGroups,
     addConnectionGroup,
     moveConnection,
+    removeConnection,
     connections,
     activeConnectionId,
     connectionError,

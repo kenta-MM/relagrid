@@ -1,5 +1,5 @@
 import { useShortcuts, shortcutAria, shortcutLabel } from '@/lib/shortcut-settings';
-import { useRef, useState, type RefObject, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type RefObject, type DragEvent } from 'react';
 import {
   ChevronDown,
   Database,
@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GroupDialog } from '@/features/connection/GroupDialog';
@@ -26,6 +27,7 @@ interface Props {
   connectionGroups: string[];
   onAddGroup(name: string): void;
   onMoveConnection(id: number, group?: string): void;
+  onRemoveConnection(id: number): void;
   activeConnectionId: number | null;
   connectionError: string;
   onSelectConnection(id: number): void;
@@ -48,6 +50,7 @@ export function Sidebar({
   connectionGroups,
   onAddGroup,
   onMoveConnection,
+  onRemoveConnection,
   activeConnectionId,
   connectionError,
   onSelectConnection,
@@ -60,6 +63,41 @@ export function Sidebar({
 }: Props) {
   const shortcuts = useShortcuts();
   const [groupOpen, setGroupOpen] = useState(false);
+  const [menu, setMenu] = useState<{ id: number; x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuTrigger = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    menuRef.current?.querySelector('button')?.focus();
+    function outside(event: PointerEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setMenu(null);
+    }
+    function close() {
+      setMenu(null);
+    }
+    document.addEventListener('pointerdown', outside);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('blur', close);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('blur', close);
+    };
+  }, [menu]);
+  useEffect(() => {
+    if (busy || hidden) setMenu(null);
+  }, [busy, hidden]);
+  function openMenu(id: number, target: HTMLButtonElement, x: number, y: number) {
+    if (busy) return;
+    menuTrigger.current = target;
+    setMenu({
+      id,
+      x: Math.max(8, Math.min(x, window.innerWidth - 188)),
+      y: Math.max(8, Math.min(y, window.innerHeight - 56)),
+    });
+  }
   const draggedId = useRef<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -130,6 +168,19 @@ export function Sidebar({
         }}
         onDragEnd={endDrag}
         onClick={() => onSelectConnection(connection.id)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          openMenu(connection.id, event.currentTarget, event.clientX, event.clientY);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            event.preventDefault();
+            const rect = event.currentTarget.getBoundingClientRect();
+            openMenu(connection.id, event.currentTarget, rect.left, rect.bottom);
+          }
+        }}
+        aria-haspopup="menu"
+        aria-expanded={menu?.id === connection.id}
         disabled={busy}
         aria-pressed={active}
         title={`${connection.database} · ${connection.host}:${connection.port}`}
@@ -297,6 +348,37 @@ export function Sidebar({
         groups={connectionGroups}
         onAdd={onAddGroup}
       />
+      {menu && !busy && !hidden && (
+        <div
+          ref={menuRef}
+          className="connection-context-menu"
+          role="menu"
+          aria-label="接続の操作"
+          style={{ left: menu.x, top: menu.y }}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setMenu(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' || event.key === 'Tab') {
+              event.preventDefault();
+              event.stopPropagation();
+              setMenu(null);
+              menuTrigger.current?.focus();
+            }
+          }}
+        >
+          <button
+            role="menuitem"
+            onClick={() => {
+              setMenu(null);
+              searchInputRef.current?.focus();
+              onRemoveConnection(menu.id);
+            }}
+          >
+            <Trash2 size={15} /> 削除
+          </button>
+        </div>
+      )}
     </aside>
   );
 }
